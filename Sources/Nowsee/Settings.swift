@@ -4,7 +4,7 @@ import Foundation
 enum SignalSource {
     case spectrum
     case envelope
-    case scope
+    case stereoSpectrum
 }
 
 enum Visualization: String, CaseIterable, Identifiable {
@@ -31,8 +31,10 @@ enum Visualization: String, CaseIterable, Identifiable {
         case .spectrogram: return "Scrolling frequency map, auto-contrasted."
         case .waveform: return "Scrolling amplitude envelope around a centre line."
         case .ocean: return "Scrolling swell that rises from the bottom edge."
-        case .stereo: return "Fixed window — left channel above the axis, right below."
-        case .morph: return "Fixed window — a smoothed line per channel that morphs in place."
+        case .stereo:
+            return "Bass left, treble right. Left channel above the axis, right below."
+        case .morph:
+            return "Bass left, treble right. One morphing line per channel."
         }
     }
 
@@ -40,7 +42,7 @@ enum Visualization: String, CaseIterable, Identifiable {
         switch self {
         case .spectrogram: return .spectrum
         case .waveform, .ocean: return .envelope
-        case .stereo, .morph: return .scope
+        case .stereo, .morph: return .stereoSpectrum
         }
     }
 

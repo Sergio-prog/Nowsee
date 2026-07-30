@@ -2,9 +2,9 @@ import Foundation
 import NowseeCore
 import simd
 
-let columnCount = 256
-let windowSize = 8192
-let triggerSearch = 2048
+let bandCount = 128
+let windowSize = 2048
+let sampleRate: Double = 48000
 
 var failures = 0
 
@@ -17,13 +17,13 @@ func check(_ name: String, _ passed: Bool, _ detail: String = "") {
 final class Harness {
     let left = AudioRingBuffer(capacity: 1 << 15)
     let right = AudioRingBuffer(capacity: 1 << 15)
-    let analyzer: ScopeAnalyzer
+    let analyzer: StereoSpectrumAnalyzer
     private var written = 0
 
     init() {
-        analyzer = ScopeAnalyzer(
-            left: left, right: right, columnCount: columnCount,
-            windowSize: windowSize, triggerSearch: triggerSearch)
+        analyzer = StereoSpectrumAnalyzer(
+            left: left, right: right, sampleRate: sampleRate, bandCount: bandCount,
+            windowSize: windowSize)
     }
 
     func write(_ count: Int, _ generator: (Int) -> (Float, Float)) {
@@ -37,100 +37,104 @@ final class Harness {
         written += count
     }
 
-    func snapshot() -> (bounds: [SIMD4<Float>], trace: [SIMD2<Float>])? {
-        var result: (bounds: [SIMD4<Float>], trace: [SIMD2<Float>])?
-        analyzer.snapshot { bounds, trace in result = (bounds, trace) }
+    func snapshot() -> [SIMD2<Float>]? {
+        var result: [SIMD2<Float>]?
+        analyzer.snapshot { levels in result = levels }
         return result
+    }
+
+    func settle(_ rounds: Int, _ count: Int, _ generator: (Int) -> (Float, Float)) -> [SIMD2<Float>] {
+        var latest: [SIMD2<Float>] = []
+        for _ in 0..<rounds {
+            write(count, generator)
+            if let levels = snapshot() { latest = levels }
+        }
+        return latest
     }
 }
 
-func peak(_ values: [Float]) -> Float { values.max() ?? 0 }
+func tone(_ hz: Double, _ amplitude: Float) -> (Int) -> Float {
+    { index in sin(Float(Double(index) * 2 * .pi * hz / sampleRate)) * amplitude }
+}
 
-print("nowsee-check — scope DSP verification\n")
+func peakBand(_ levels: [SIMD2<Float>], _ channel: Int) -> Int {
+    var best = 0
+    for index in levels.indices where levels[index][channel] > levels[best][channel] {
+        best = index
+    }
+    return best
+}
+
+print("nowsee-check — stereo spectrum verification\n")
 
 do {
     let harness = Harness()
-    harness.write(windowSize) { _ in (0.5, 0.5) }
+    harness.write(windowSize / 2) { _ in (0.5, 0.5) }
     check("no emission before a full window", harness.snapshot() == nil)
 }
 
 do {
     let harness = Harness()
-    harness.write(windowSize + triggerSearch) { index in
-        let phase = Float(index) * 2 * .pi / 128
-        return (sin(phase) * 0.8, sin(phase) * 0.2)
-    }
-    guard let result = harness.snapshot() else {
-        check("stereo separation", false, "no snapshot")
-        exit(1)
-    }
-    let leftPeak = peak(result.bounds.map { max(abs($0.x), abs($0.y)) })
-    let rightPeak = peak(result.bounds.map { max(abs($0.z), abs($0.w)) })
-    check("column count", result.bounds.count == columnCount, "\(result.bounds.count)")
+    let low = tone(200, 0.6)
+    let high = tone(4000, 0.6)
+    let levels = harness.settle(40, windowSize) { index in (low(index), high(index)) }
+
+    let leftBand = peakBand(levels, 0)
+    let rightBand = peakBand(levels, 1)
+    check("band count", levels.count == bandCount, "\(levels.count)")
     check(
-        "left channel amplitude", abs(leftPeak - 0.8) < 0.05,
-        String(format: "%.3f expected 0.800", leftPeak))
+        "low tone lands left of high tone", leftBand < rightBand,
+        "200 Hz at band \(leftBand), 4 kHz at band \(rightBand)")
     check(
-        "right channel amplitude", abs(rightPeak - 0.2) < 0.05,
-        String(format: "%.3f expected 0.200", rightPeak))
+        "channels stay independent", abs(leftBand - rightBand) > 20,
+        "separation \(abs(leftBand - rightBand)) bands")
 }
 
 do {
     let harness = Harness()
-    harness.write(windowSize + triggerSearch) { index in
-        let value = sin(Float(index) * 2 * .pi / Float(windowSize)) * 0.6
-        return (value, -value)
+    let steady = tone(1000, 0.6)
+    let generator = { (index: Int) in (steady(index), steady(index)) }
+    let first = harness.settle(40, windowSize, generator)
+
+    var drift = 0
+    var motion: Float = 0
+    for _ in 0..<20 {
+        harness.write(windowSize / 3, generator)
+        guard let next = harness.snapshot() else { continue }
+        drift = max(drift, abs(peakBand(next, 0) - peakBand(first, 0)))
+        motion = max(motion, zip(first, next).map { abs($0.x - $1.x) }.max() ?? 0)
     }
-    guard let result = harness.snapshot() else { exit(1) }
-    let tracePeak = peak(result.trace.map { abs($0.x) })
+
+    check("steady tone holds its band", drift == 0, "moved \(drift) bands")
     check(
-        "trace follows low frequency shape", tracePeak > 0.3,
-        String(format: "peak %.3f", tracePeak))
-    check(
-        "trace keeps channels independent",
-        result.trace.allSatisfy { abs($0.x + $0.y) < 0.01 })
+        "steady tone holds its level", motion < 0.02, String(format: "%.4f", motion))
 }
 
 do {
     let harness = Harness()
-    harness.write(windowSize + triggerSearch) { index in
-        let value: Float = index % 2 == 0 ? 0.7 : -0.7
-        return (value, value)
-    }
-    guard let result = harness.snapshot() else { exit(1) }
-    let boundsPeak = peak(result.bounds.map { max(abs($0.x), abs($0.y)) })
-    let tracePeak = peak(result.trace.map { abs($0.x) })
+    let quiet = tone(1000, 0.05)
+    let loud = tone(1000, 0.9)
+
+    let quietLevels = harness.settle(40, windowSize) { index in (quiet(index), quiet(index)) }
+    let quietPeak = quietLevels.map(\.x).max() ?? 0
+    let loudLevels = harness.settle(40, windowSize) { index in (loud(index), loud(index)) }
+    let loudPeak = loudLevels.map(\.x).max() ?? 0
+
     check(
-        "bounds keep nyquist content", boundsPeak > 0.6, String(format: "%.3f", boundsPeak))
-    check(
-        "trace averages nyquist content away", tracePeak < 0.05,
-        String(format: "%.3f", tracePeak))
+        "louder input reads higher", loudPeak > quietPeak + 0.1,
+        String(format: "%.3f vs %.3f", loudPeak, quietPeak))
+    check("levels stay normalized", loudPeak <= 1.0, String(format: "%.3f", loudPeak))
 }
 
 do {
     let harness = Harness()
-    let period = 512
-    let tone = { (index: Int) -> (Float, Float) in
-        let value = sin(Float(index) * 2 * .pi / Float(period))
-        return (value, value)
-    }
-    harness.write(windowSize + triggerSearch, tone)
-    guard let first = harness.snapshot() else { exit(1) }
-    harness.write(period / 4, tone)
-    guard let shifted = harness.snapshot() else { exit(1) }
+    let loud = tone(1000, 0.9)
+    _ = harness.settle(40, windowSize) { index in (loud(index), loud(index)) }
+    let decayed = harness.settle(60, windowSize) { _ in (0, 0) }
 
-    let drift = peak(zip(first.trace, shifted.trace).map { abs($0.x - $1.x) })
     check(
-        "trigger holds phase across snapshots", drift < 0.05,
-        String(format: "drift %.4f", drift))
-}
-
-do {
-    let harness = Harness()
-    harness.write(windowSize + triggerSearch) { _ in (0, 0) }
-    guard let result = harness.snapshot() else { exit(1) }
-    check("silence stays flat", result.bounds.allSatisfy { $0 == .zero })
-    check("silent trace stays flat", result.trace.allSatisfy { $0 == .zero })
+        "silence decays toward zero", (decayed.map(\.x).max() ?? 1) < 0.02,
+        String(format: "%.4f", decayed.map(\.x).max() ?? 1))
 }
 
 print("")

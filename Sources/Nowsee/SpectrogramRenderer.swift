@@ -89,20 +89,32 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
     return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
 }
 
+constant float spectrumGain = 0.25;
+
+static float2 smoothedBands(texture2d<float> spectrum, sampler bandSampler, float u, float gain) {
+    float width = float(spectrum.get_width());
+    float2 total = float2(0.0);
+    float weightSum = 0.0;
+    for (int tap = -2; tap <= 2; ++tap) {
+        float weight = exp(-float(tap * tap) / 4.0);
+        float position = clamp(u + float(tap) / width, 0.0, 1.0);
+        total += spectrum.sample(bandSampler, float2(position, 0.5)).rg * weight;
+        weightSum += weight;
+    }
+    return clamp(total / weightSum * gain * spectrumGain, 0.0, 1.0);
+}
+
 fragment float4 fragmentStereo(VertexOut in [[stage_in]],
-                               texture2d<float> scope [[texture(0)]],
+                               texture2d<float> spectrum [[texture(0)]],
                                texture2d<float> palette [[texture(1)]],
                                constant float &writeOffset [[buffer(0)]],
                                constant float4 &background [[buffer(1)]],
                                constant float &gain [[buffer(2)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
-    float4 bounds = scope.sample(clampSampler, float2(in.uv.x, 0.5));
-
-    float leftAmplitude = clamp(max(abs(bounds.r), abs(bounds.g)) * gain, 0.0, 1.0);
-    float rightAmplitude = clamp(max(abs(bounds.b), abs(bounds.a)) * gain, 0.0, 1.0);
+    float2 level = smoothedBands(spectrum, clampSampler, in.uv.x, gain);
 
     float y = in.uv.y * 2.0 - 1.0;
-    float limit = y >= 0.0 ? leftAmplitude : rightAmplitude;
+    float limit = y >= 0.0 ? level.r : level.g;
     float edge = fwidth(y) * 1.5 + 0.004;
     float body = 1.0 - smoothstep(limit - edge, limit + edge, abs(y));
 
@@ -116,37 +128,25 @@ fragment float4 fragmentStereo(VertexOut in [[stage_in]],
     return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
 }
 
-constant float traceBoost = 3.0;
-
 fragment float4 fragmentMorph(VertexOut in [[stage_in]],
-                              texture2d<float> trace [[texture(0)]],
+                              texture2d<float> spectrum [[texture(0)]],
                               texture2d<float> palette [[texture(1)]],
                               constant float &writeOffset [[buffer(0)]],
                               constant float4 &background [[buffer(1)]],
                               constant float &gain [[buffer(2)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
-    float width = float(trace.get_width());
-
-    float2 value = float2(0.0);
-    float weightSum = 0.0;
-    for (int tap = -3; tap <= 3; ++tap) {
-        float weight = exp(-float(tap * tap) / 6.0);
-        float u = clamp(in.uv.x + float(tap) / width, 0.0, 1.0);
-        value += trace.sample(clampSampler, float2(u, 0.5)).rg * weight;
-        weightSum += weight;
-    }
-    value = clamp(value / weightSum * gain * traceBoost, -1.0, 1.0);
+    float2 level = smoothedBands(spectrum, clampSampler, in.uv.x, gain);
 
     float y = in.uv.y * 2.0 - 1.0;
     float thickness = fwidth(y) * 1.5 + 0.006;
 
-    float leftLine = 1.0 - smoothstep(0.0, thickness, abs(y - value.r));
-    float rightLine = 1.0 - smoothstep(0.0, thickness, abs(y - value.g));
-    float leftGlow = exp(-pow((y - value.r) / (thickness * 6.0), 2.0)) * 0.35;
-    float rightGlow = exp(-pow((y - value.g) / (thickness * 6.0), 2.0)) * 0.2;
+    float leftLine = 1.0 - smoothstep(0.0, thickness, abs(y - level.r));
+    float rightLine = 1.0 - smoothstep(0.0, thickness, abs(y + level.g));
+    float leftGlow = exp(-pow((y - level.r) / (thickness * 8.0), 2.0)) * 0.35;
+    float rightGlow = exp(-pow((y + level.g) / (thickness * 8.0), 2.0)) * 0.25;
 
     float3 hot = palette.sample(clampSampler, float2(0.85, 0.5)).rgb;
-    float3 cool = palette.sample(clampSampler, float2(0.45, 0.5)).rgb;
+    float3 cool = palette.sample(clampSampler, float2(0.5, 0.5)).rgb;
 
     float3 color = clamp(cool * (rightLine + rightGlow) + hot * (leftLine + leftGlow), 0.0, 1.0);
     float coverage = clamp(leftLine + rightLine + leftGlow + rightGlow, 0.0, 1.0);
@@ -164,8 +164,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
     private let morphPipeline: MTLRenderPipelineState
     private let spectrogram: MTLTexture
     private let envelope: MTLTexture
-    private let scope: MTLTexture
-    private let trace: MTLTexture
+    private let bands: MTLTexture
     private var palette: MTLTexture
     private let columnCapacity: Int
     private let rowCount: Int
@@ -189,7 +188,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         CACurrentMediaTime() - lastSignalTime > idleAfter
     }
 
-    init?(rowCount: Int, columnCapacity: Int = 1024, scopeColumns: Int = 256) {
+    init?(rowCount: Int, columnCapacity: Int = 1024, bandCount: Int = 128) {
         guard let device = MTLCreateSystemDefaultDevice(),
             let commandQueue = device.makeCommandQueue()
         else { return nil }
@@ -247,27 +246,16 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         guard let envelope = device.makeTexture(descriptor: envelopeDescriptor) else { return nil }
         self.envelope = envelope
 
-        let scopeDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba32Float,
-            width: scopeColumns,
-            height: 1,
-            mipmapped: false
-        )
-        scopeDescriptor.usage = .shaderRead
-        scopeDescriptor.storageMode = .shared
-        guard let scope = device.makeTexture(descriptor: scopeDescriptor) else { return nil }
-        self.scope = scope
-
-        let traceDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+        let bandDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rg32Float,
-            width: scopeColumns,
+            width: bandCount,
             height: 1,
             mipmapped: false
         )
-        traceDescriptor.usage = .shaderRead
-        traceDescriptor.storageMode = .shared
-        guard let trace = device.makeTexture(descriptor: traceDescriptor) else { return nil }
-        self.trace = trace
+        bandDescriptor.usage = .shaderRead
+        bandDescriptor.storageMode = .shared
+        guard let bands = device.makeTexture(descriptor: bandDescriptor) else { return nil }
+        self.bands = bands
 
         let paletteDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba32Float,
@@ -332,33 +320,25 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func update(bounds: [SIMD4<Float>], trace values: [SIMD2<Float>]) {
-        guard !bounds.isEmpty, values.count == bounds.count else { return }
+    func update(spectrum: [SIMD2<Float>]) {
+        guard !spectrum.isEmpty else { return }
 
-        bounds.withUnsafeBytes { bytes in
-            scope.replace(
-                region: MTLRegionMake2D(0, 0, bounds.count, 1),
+        spectrum.withUnsafeBytes { bytes in
+            bands.replace(
+                region: MTLRegionMake2D(0, 0, spectrum.count, 1),
                 mipmapLevel: 0,
                 withBytes: bytes.baseAddress!,
-                bytesPerRow: bounds.count * MemoryLayout<SIMD4<Float>>.stride
-            )
-        }
-        values.withUnsafeBytes { bytes in
-            trace.replace(
-                region: MTLRegionMake2D(0, 0, values.count, 1),
-                mipmapLevel: 0,
-                withBytes: bytes.baseAddress!,
-                bytesPerRow: values.count * MemoryLayout<SIMD2<Float>>.stride
+                bytesPerRow: spectrum.count * MemoryLayout<SIMD2<Float>>.stride
             )
         }
 
         columnsAppended += 1
         var peak: Float = 0
-        for value in bounds {
-            peak = max(peak, max(abs(value.x), max(abs(value.y), max(abs(value.z), abs(value.w)))))
+        for value in spectrum {
+            peak = max(peak, max(value.x, value.y))
         }
         scopePeak = peak
-        if peak > 0.002 {
+        if peak > 0.01 {
             lastSignalTime = CACurrentMediaTime()
         }
     }
@@ -378,8 +358,8 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         case .spectrogram: (pipeline, source) = (spectrogramPipeline, spectrogram)
         case .waveform: (pipeline, source) = (waveformPipeline, envelope)
         case .ocean: (pipeline, source) = (oceanPipeline, envelope)
-        case .stereo: (pipeline, source) = (stereoPipeline, scope)
-        case .morph: (pipeline, source) = (morphPipeline, trace)
+        case .stereo: (pipeline, source) = (stereoPipeline, bands)
+        case .morph: (pipeline, source) = (morphPipeline, bands)
         }
 
         encoder.setRenderPipelineState(pipeline)
@@ -390,7 +370,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         switch mode.source {
         case .spectrum: offset = Float(writeIndex) / Float(columnCapacity)
         case .envelope: offset = Float(envelopeIndex) / Float(columnCapacity)
-        case .scope: offset = 0
+        case .stereoSpectrum: offset = 0
         }
         encoder.setFragmentBytes(&offset, length: MemoryLayout<Float>.size, index: 0)
         var backgroundColor = background

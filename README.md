@@ -20,10 +20,11 @@ Live visualization of system audio, in a window and in the menu bar. Five modes 
 - **Waveform** — amplitude envelope around a centre line
 - **Ocean** — filled swell rising from the bottom edge with a lit crest
 
-*Fixed window* — the picture stands still and changes shape in place, the way a DAW scope does.
+*Fixed* — frequency runs along X, so bass stays left and treble stays right. Nothing travels;
+the shape morphs in place, the way an FL Studio visualizer does.
 
-- **Stereo** — left channel above the axis, right channel below
-- **Morph** — one smoothed line per channel
+- **Stereo** — mirrored spectrum, left channel above the axis, right channel below
+- **Morph** — one line per channel, mirrored about the axis
 
 Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
 releases the audio tap. Verified capturing Spotify playback.
@@ -218,12 +219,18 @@ it would freeze mid-scroll leaving a stale half-drawn image.
 
 Measured: ~9% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 30 MB resident.
 
-**A fixed-window scope needs a trigger, or it slides.** Re-mapping the newest N samples across the
-full width every frame does not stand still — features drift because the window start is wherever
-the audio clock happens to be. `ScopeAnalyzer` reads `windowSize + triggerSearch` samples and scans
-the lead-in for a rising zero crossing (with a small hysteresis threshold so noise near zero cannot
-trigger it), then measures from there. `make check` asserts on this directly: advance the ring by a
-quarter period of a steady tone and the emitted trace must not move. It measures 0.0000 drift.
+**"Static" means frequency on X, not a cleverer time window.** The first attempt at Stereo and Morph
+put time on X and tried to hold the picture still with a zero-crossing trigger. It still scrolled,
+and it always would: a trigger only locks sub-period phase, while the window itself keeps advancing
+with the audio clock every frame. A synthetic test hid this, because a pure tone *is* periodic
+across the whole window and so appears to lock perfectly. Real music is not.
+
+Putting frequency on X removes the motion by construction — band *k* is always at the same X, and
+only its height changes. `make check` now asserts the property that was actually broken: advance the
+ring by a fraction of a window and a steady tone must not change bands. It moves 0.
+
+The lesson generalises: the test has to exercise the thing that's hard, not the thing that's easy to
+generate. A pure sine was the one input that could not fail.
 
 **Rate-limiting off a coarser timer quantizes badly.** The drain timer ticks every 16 ms, so a
 naive `elapsed >= 1/30` test skips the 32 ms tick and fires at 48 ms — a requested 30 fps silently
@@ -233,9 +240,9 @@ tracks the configured frame rate 1:1.
 **Verifying a visualizer without playing audio.** Screenshots are unavailable (the shell has no
 Screen Recording permission) and playing test tones is obnoxious. `NOWSEE_SELFTEST=signal` writes a
 synthetic stereo tone directly into the ring buffers, which exercises analyzer, Metal upload, and
-menu bar strip end to end in silence. Because the tone's amplitude is known, the `peak=` field in
-the diagnostics log is a real assertion rather than a vague sign of life — 0.600 in, 0.600 out
-confirms the channel split and every stage after it.
+menu bar strip end to end in silence. Because the tone is steady, `peak=` in the diagnostics log
+should hold a constant value frame after frame — drift there means something upstream is moving
+when it should not be.
 
 ## Layout
 

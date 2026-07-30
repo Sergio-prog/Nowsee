@@ -5,7 +5,7 @@ import simd
 
 final class AudioEngine {
     static let rowCount = 256
-    static let scopeColumns = 256
+    static let bandCount = 128
     private static let drainTick = 0.016
 
     private let tap = SystemAudioTap()
@@ -14,7 +14,7 @@ final class AudioEngine {
     private let rightRing = AudioRingBuffer(capacity: 1 << 15)
     private var spectrum: SpectrumAnalyzer?
     private var waveform: WaveformAnalyzer?
-    private var scope: ScopeAnalyzer?
+    private var stereoSpectrum: StereoSpectrumAnalyzer?
     private var timer: DispatchSourceTimer?
     private var synthetic: DispatchSourceTimer?
     private var lastScopeEmit: CFTimeInterval = 0
@@ -23,7 +23,7 @@ final class AudioEngine {
     var frameRate = 30
     var onColumn: (([Float]) -> Void)?
     var onEnvelope: ((Float, Float) -> Void)?
-    var onScope: (([SIMD4<Float>], [SIMD2<Float>]) -> Void)?
+    var onSpectrumBands: (([SIMD2<Float>]) -> Void)?
     var onStatus: ((String) -> Void)?
 
     private(set) var isRunning = false
@@ -66,8 +66,9 @@ final class AudioEngine {
         spectrum = SpectrumAnalyzer(
             ring: ring, sampleRate: info.sampleRate, rowCount: Self.rowCount)
         waveform = WaveformAnalyzer(ring: ring)
-        scope = ScopeAnalyzer(
-            left: leftRing, right: rightRing, columnCount: Self.scopeColumns)
+        stereoSpectrum = StereoSpectrumAnalyzer(
+            left: leftRing, right: rightRing, sampleRate: info.sampleRate,
+            bandCount: Self.bandCount)
         onStatus?("\(info.outputDeviceName) · \(Int(info.sampleRate / 1000)) kHz")
     }
 
@@ -81,8 +82,8 @@ final class AudioEngine {
                 self.spectrum?.drainColumns { self.onColumn?($0) }
             case .envelope:
                 self.waveform?.drainEnvelopes { self.onEnvelope?($0, $1) }
-            case .scope:
-                self.emitScopeIfDue()
+            case .stereoSpectrum:
+                self.emitBandsIfDue()
             }
         }
         source.resume()
@@ -115,20 +116,20 @@ final class AudioEngine {
         source.resume()
         synthetic = source
 
-        if scope == nil {
-            scope = ScopeAnalyzer(
-                left: leftRing, right: rightRing, columnCount: Self.scopeColumns)
+        if stereoSpectrum == nil {
+            stereoSpectrum = StereoSpectrumAnalyzer(
+                left: leftRing, right: rightRing, sampleRate: 48000, bandCount: Self.bandCount)
             waveform = WaveformAnalyzer(ring: ring)
             spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
             startDrainTimer()
         }
     }
 
-    private func emitScopeIfDue() {
+    private func emitBandsIfDue() {
         let now = CACurrentMediaTime()
         let interval = 1.0 / Double(max(frameRate, 1)) - Self.drainTick / 2
         guard now - lastScopeEmit >= interval else { return }
         lastScopeEmit = now
-        scope?.snapshot { bounds, trace in onScope?(bounds, trace) }
+        stereoSpectrum?.snapshot { levels in onSpectrumBands?(levels) }
     }
 }

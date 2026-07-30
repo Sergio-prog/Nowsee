@@ -31,9 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             StripRegistry.shared.broadcast(low: low, high: high)
             self?.wakeRendererIfNeeded()
         }
-        engine.onScope = { [weak self] bounds, trace in
-            self?.renderer?.update(bounds: bounds, trace: trace)
-            StripRegistry.shared.broadcast(bounds: bounds, trace: trace)
+        engine.onSpectrumBands = { [weak self] levels in
+            self?.renderer?.update(spectrum: levels)
+            StripRegistry.shared.broadcast(spectrum: levels)
             self?.wakeRendererIfNeeded()
         }
         engine.onStatus = { [weak self] status in
@@ -123,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func setUpWindow() {
         guard
             let renderer = SpectrogramRenderer(
-                rowCount: AudioEngine.rowCount, scopeColumns: AudioEngine.scopeColumns)
+                rowCount: AudioEngine.rowCount, bandCount: AudioEngine.bandCount)
         else {
             statusMenuItem?.title = "Metal unavailable"
             return
