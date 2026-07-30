@@ -220,10 +220,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.isReleasedWhenClosed = false
             window.setContentSize(contentSize)
             window.center()
+            window.delegate = self
             settingsWindow = window
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        PreviewSignal.shared.start()
 
         if ProcessInfo.processInfo.environment["NOWSEE_DIAGNOSTICS"] == "1" {
             logSettingsGeometry("immediately")
@@ -243,7 +245,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard (notification.object as? NSWindow) === window else { return }
+        let closing = notification.object as? NSWindow
+        if closing === settingsWindow {
+            PreviewSignal.shared.stop()
+        }
+        guard closing === window else { return }
         metalView?.isPaused = true
     }
 
@@ -299,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 columns=\(self.renderer?.columnsAppended ?? 0) \
                 frames=\(self.renderer?.framesDrawn ?? 0) \
                 peak=\(String(format: "%.3f", self.renderer?.scopePeak ?? 0)) \
-                strips=\(StripRegistry.shared.registeredCount) \
+                \(StripRegistry.shared.activitySummary) \
                 paused=\(self.isPaused) \
                 status=\(self.statusMenuItem.title)
                 """)

@@ -37,6 +37,8 @@ final class StripVisualizationView: NSView {
 
     override var isFlipped: Bool { true }
 
+    var isActive: Bool { state == .active }
+
     private var state: DisplayState {
         if isPaused { return .paused }
         return CACurrentMediaTime() - lastSignal > idleTimeout ? .idle : .active

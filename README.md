@@ -86,6 +86,13 @@ was validated before any Metal existed.
 `Settings…` (⌘,) from the menu bar opens a window with a live preview of both the main view and the
 menu bar strip. Everything persists in `UserDefaults`.
 
+When nothing is playing, the previews fall back to a synthetic signal — a drifting four-band contour
+shaped like music, generated numerically and never sent to an output device. Without it the previews
+are a flat line whenever the room is quiet, which is exactly when someone is most likely to be
+adjusting palettes. Real audio takes over the moment it arrives, and the mock feeds only the preview
+strips: the menu bar keeps showing its true idle state, so it never claims to hear something it
+cannot. The generator runs only while the settings window is open.
+
 | Setting | Options | Default |
 |---|---|---|
 | Visualization | Spectrogram, Waveform, Ocean, Bars, Stereo, Morph | Spectrogram |
