@@ -53,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if ProcessInfo.processInfo.environment["NOWSEE_DIAGNOSTICS"] == "1" {
             startDiagnostics()
         }
+        if ProcessInfo.processInfo.environment["NOWSEE_SELFTEST"] == "settings" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.showSettings()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -167,16 +172,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func showSettings() {
         if settingsWindow == nil {
+            let contentSize = NSSize(width: 460, height: 640)
             let hosting = NSHostingController(rootView: SettingsView())
-            let window = NSWindow(contentViewController: hosting)
+            hosting.preferredContentSize = contentSize
+            hosting.view.frame = NSRect(origin: .zero, size: contentSize)
+
+            let window = NSWindow(
+                contentRect: NSRect(origin: .zero, size: contentSize),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentViewController = hosting
             window.title = "Nowsee Settings"
-            window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
+            window.setContentSize(contentSize)
             window.center()
             settingsWindow = window
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        if ProcessInfo.processInfo.environment["NOWSEE_DIAGNOSTICS"] == "1" {
+            logSettingsGeometry("immediately")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.logSettingsGeometry("after layout")
+            }
+        }
+    }
+
+    private func logSettingsGeometry(_ label: String) {
+        guard let content = settingsWindow?.contentView else { return }
+        writeDiagnostic(
+            "settings [\(label)] class=\(type(of: content)) "
+                + "content=\(content.frame.size) fitting=\(content.fittingSize) "
+                + "subviews=\(content.subviews.count) "
+                + "previewStrips=\(StripRegistry.shared.registeredCount)")
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -212,26 +243,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
-    private func startDiagnostics() {
-        let url = FileManager.default.homeDirectoryForCurrentUser
+    private var diagnosticsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/nowsee.log")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+    }
+
+    private func writeDiagnostic(_ text: String) {
+        guard let handle = try? FileHandle(forWritingTo: diagnosticsURL) else { return }
+        handle.seekToEndOfFile()
+        handle.write((text + "\n").data(using: .utf8)!)
+        try? handle.close()
+    }
+
+    private func startDiagnostics() {
+        FileManager.default.createFile(atPath: diagnosticsURL.path, contents: nil)
 
         let timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let self else { return }
-            let line = """
+            self.writeDiagnostic(
+                """
                 metal=\(self.renderer == nil ? "UNAVAILABLE" : "ok") \
                 mode=\(self.settings.visualization.rawValue) \
                 columns=\(self.renderer?.columnsAppended ?? 0) \
                 frames=\(self.renderer?.framesDrawn ?? 0) \
                 paused=\(self.isPaused) \
                 status=\(self.statusMenuItem.title)
-
-                """
-            guard let handle = try? FileHandle(forWritingTo: url) else { return }
-            handle.seekToEndOfFile()
-            handle.write(line.data(using: .utf8)!)
-            try? handle.close()
+                """)
         }
         RunLoop.main.add(timer, forMode: .common)
     }

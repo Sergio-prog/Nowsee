@@ -5,6 +5,8 @@ final class StripRegistry {
 
     private let strips = NSHashTable<StripVisualizationView>.weakObjects()
 
+    var registeredCount: Int { strips.allObjects.count }
+
     func register(_ strip: StripVisualizationView) {
         strips.add(strip)
         applyCurrentSettings(to: strip)

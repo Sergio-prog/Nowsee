@@ -53,8 +53,9 @@ struct SettingsView: View {
                 menuBarSection
             }
             .padding(22)
+            .frame(width: 460, alignment: .leading)
         }
-        .frame(width: 460)
+        .frame(width: 460, height: 640)
     }
 
     private var preview: some View {

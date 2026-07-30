@@ -169,6 +169,13 @@ its low anchor to -95 dB so silence stays black.
 not a real hot spot. The ring buffer's per-element loops were replaced with two bulk `update(from:)`
 copies regardless, since wrap-around only ever needs two chunks.
 
+**A `ScrollView` has no intrinsic height, which renders an `NSHostingController` window empty.**
+`NSWindow(contentViewController:)` sizes itself from the SwiftUI fitting size; a root `ScrollView`
+with only `.frame(width:)` reports a height of zero, so the window opens with a title bar and no
+content and no error anywhere. The settings root sets an explicit width *and* height. Worth checking
+`contentView.fittingSize` before assuming the view failed to build — and measuring after a layout
+pass, since subview counts are still zero immediately after `makeKeyAndOrderFront`.
+
 **Metal shaders compile at runtime with no Xcode.** `device.makeLibrary(source:)` works with only
 Command Line Tools installed, so the shader lives in a Swift string and there is no `.metallib`
 build step.
