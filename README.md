@@ -39,8 +39,9 @@ Swift only. Everything the app needs is an Apple framework with no cross-languag
 ## Build
 
 ```sh
-make app             # build + ad-hoc sign dist/Nowsee.app  (release by default)
-make run-app         # restart it
+make install         # build and install to /Applications, then launch
+make app             # build + sign dist/Nowsee.app (release by default)
+make run-app         # restart the dist/ build
 make probe-app       # build the P0 capture-verification app
 make run-probe-app   # launch it for 15s; writes ~/Library/Logs/nowsee-probe.log
 make reset-tcc       # revoke the audio permission to re-test the prompt
@@ -68,6 +69,22 @@ menu bar strip. Everything persists in `UserDefaults`.
 | Menu bar edge fade | 0–30 px | 6 px |
 | Menu bar opacity | 20–100% | 100% |
 | Pause capture | releases the tap entirely | running |
+
+## Raycast and Spotlight
+
+`make install` copies the bundle to `/Applications`, which is where Raycast and Spotlight look —
+`dist/` is a build directory neither of them indexes and `make clean` deletes it. `LSUIElement`
+apps still appear in both, so "Nowsee" finds it. Launching it while it is already running shows
+the visualizer window rather than doing nothing, via `applicationShouldHandleReopen`.
+
+For an actual restart, `raycast/restart-nowsee.sh` is a Raycast script command. Add its directory
+under Raycast → Extensions → Script Commands → Add Directory, and "Restart Nowsee" becomes
+searchable. It stops the app with SIGINT so CoreAudio tears the tap down cleanly, waits for it to
+exit, and only then falls back to SIGKILL — killing a process that holds an audio tap without
+letting it clean up leaks the aggregate device into `coreaudiod` and breaks system-wide playback.
+
+`ditto` is used rather than `cp` so the code signature survives the copy, which keeps the audio
+permission grant intact.
 
 ## Code signing
 

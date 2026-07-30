@@ -59,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         engine.stop()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showWindow()
+        return true
+    }
+
     private func wakeRendererIfNeeded() {
         guard metalView?.isPaused == true, window?.isVisible == true, !isPaused,
             renderer?.hasScrolledToSilence == false

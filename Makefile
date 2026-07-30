@@ -8,7 +8,20 @@ SIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | 
 PROBE_APP := dist/Nowsee Probe.app
 APP := dist/Nowsee.app
 
-.PHONY: cert app run-app probe run-probe probe-app run-probe-app reset-tcc clean
+INSTALL_DIR ?= /Applications
+
+.PHONY: cert app run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
+
+install: app
+	@pkill -INT -f "Nowsee.app/Contents/MacOS/Nowsee" 2>/dev/null || true
+	rm -rf "$(INSTALL_DIR)/Nowsee.app"
+	ditto "$(APP)" "$(INSTALL_DIR)/Nowsee.app"
+	open "$(INSTALL_DIR)/Nowsee.app"
+	@echo "installed to $(INSTALL_DIR)/Nowsee.app — searchable in Raycast and Spotlight"
+
+uninstall:
+	@pkill -INT -f "Nowsee.app/Contents/MacOS/Nowsee" 2>/dev/null || true
+	rm -rf "$(INSTALL_DIR)/Nowsee.app"
 
 cert:
 	./scripts/make-cert.sh "$(SIGN_NAME)"
