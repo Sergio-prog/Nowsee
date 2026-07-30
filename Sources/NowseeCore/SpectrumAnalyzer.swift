@@ -6,7 +6,7 @@ public final class SpectrumAnalyzer {
     public let hopSize: Int
     public let windowSize: Int
 
-    private let ring = AudioRingBuffer()
+    private let ring: AudioRingBuffer
     private let stft: STFT
     private let map: LogFrequencyMap
     private let contrast = AutoContrast()
@@ -20,11 +20,13 @@ public final class SpectrumAnalyzer {
     public var contrastRange: (low: Float, high: Float) { (contrast.lowDB, contrast.highDB) }
 
     public init(
+        ring: AudioRingBuffer,
         sampleRate: Double,
         windowSize: Int = 2048,
         hopSize: Int = 512,
         rowCount: Int = 256
     ) {
+        self.ring = ring
         self.windowSize = windowSize
         self.hopSize = hopSize
         self.rowCount = rowCount
@@ -44,10 +46,6 @@ public final class SpectrumAnalyzer {
     deinit {
         frame.deinitialize(count: windowSize)
         frame.deallocate()
-    }
-
-    public func ingest(_ samples: UnsafePointer<Float>, _ count: Int) {
-        ring.write(samples, count)
     }
 
     public func drainColumns(_ emit: ([Float]) -> Void) {

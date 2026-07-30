@@ -54,13 +54,34 @@ which is how the DSP chain was validated before any Metal existed.
 
 ## Settings
 
-Everything lives in the menu bar menu and persists in `UserDefaults`:
+`Settings…` (⌘,) from the menu bar opens a window with a live preview of both the main view and the
+menu bar strip. Everything persists in `UserDefaults`.
 
 | Setting | Options | Default |
 |---|---|---|
+| Visualization | Spectrogram, Waveform | Spectrogram |
 | Palette | Magma, Inferno, Viridis, Classic | Magma |
 | Frame rate | 15 / 30 / 60 / 120 fps | 30 |
+| Float above all windows | on / off | off |
+| Window background opacity | 0–100% | 100% |
+| Menu bar width | 40–220 pt | 72 pt |
+| Menu bar edge fade | 0–30 px | 6 px |
+| Menu bar opacity | 20–100% | 100% |
 | Pause capture | releases the tap entirely | running |
+
+## Code signing
+
+Ad-hoc signing gives the binary a new code hash on every rebuild, so TCC treats each build as a new
+application and re-prompts for audio permission every single time. `make cert` creates a self-signed
+code-signing identity called `Nowsee Dev`, which makes the designated requirement identity-based:
+
+```
+designated => identifier "sh.nowsee.Nowsee" and certificate leaf = H"ccf8cd8b…"
+```
+
+That is stable across rebuilds, so the permission is granted once and remembered. The Makefile picks
+the identity up automatically by SHA-1 (not by name — two certificates sharing a name make `codesign`
+fail with `ambiguous`) and falls back to ad-hoc if it is missing.
 
 ## P0 findings
 
@@ -151,11 +172,25 @@ Measured: ~9% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 
 
 ```
 Sources/
-  NowseeCore/          capture + DSP, no UI
-    AudioObjectUtils   CoreAudio property helpers
-    SystemAudioTap     process tap -> aggregate device -> mono mixdown
-  nowsee-probe/        P0 capture verification CLI
+  NowseeCore/            capture + DSP, no UI
+    AudioObjectUtils     CoreAudio property helpers
+    SystemAudioTap       process tap -> aggregate device -> mono mixdown
+    AudioRingBuffer      lock-free SPSC, shared by both analyzers
+    STFT                 vDSP FFT, magnitude -> dB
+    LogFrequencyMap      linear bins -> log-spaced rows
+    AutoContrast         decaying-histogram percentile clamp
+    SpectrumAnalyzer     ring -> normalized spectrogram columns
+    WaveformAnalyzer     ring -> min/max envelope, no FFT
+  Nowsee/                the app
+    AudioEngine          owns the ring, drives the active analyzer
+    SpectrogramRenderer  Metal, one pipeline per visualization
+    StripVisualizationView  Core Graphics strip for menu bar and previews
+    SettingsView         SwiftUI settings with live preview
+  nowsee-probe/          P0 capture verification CLI
 ```
+
+Both analyzers read from one `AudioRingBuffer` owned by `AudioEngine`, so switching visualization
+costs nothing at the capture layer — only the active analyzer is drained.
 
 `swiftLanguageMode(.v5)` is set deliberately: CoreAudio's C callbacks fight Swift 6 strict
 concurrency, and the realtime audio thread has its own discipline that `Sendable` does not model.

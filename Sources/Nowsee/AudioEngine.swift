@@ -5,10 +5,14 @@ final class AudioEngine {
     static let rowCount = 256
 
     private let tap = SystemAudioTap()
-    private var analyzer: SpectrumAnalyzer?
+    private let ring = AudioRingBuffer()
+    private var spectrum: SpectrumAnalyzer?
+    private var waveform: WaveformAnalyzer?
     private var timer: DispatchSourceTimer?
 
+    var visualization: Visualization = .spectrogram
     var onColumn: (([Float]) -> Void)?
+    var onEnvelope: ((Float, Float) -> Void)?
     var onStatus: ((String) -> Void)?
 
     private(set) var isRunning = false
@@ -16,7 +20,7 @@ final class AudioEngine {
     func start() {
         do {
             try tap.start { [weak self] samples, count in
-                self?.analyzer?.ingest(samples, count)
+                self?.ring.write(samples, count)
             }
         } catch {
             onStatus?("Capture failed — \(error)")
@@ -24,9 +28,9 @@ final class AudioEngine {
         }
 
         tap.onOutputDeviceChange = { [weak self] _ in
-            DispatchQueue.main.async { self?.rebuildAnalyzer() }
+            DispatchQueue.main.async { self?.rebuildAnalyzers() }
         }
-        rebuildAnalyzer()
+        rebuildAnalyzers()
         startDrainTimer()
         isRunning = true
     }
@@ -38,12 +42,14 @@ final class AudioEngine {
         isRunning = false
     }
 
-    private func rebuildAnalyzer() {
+    private func rebuildAnalyzers() {
         guard let info = tap.streamInfo else {
             onStatus?("No output device")
             return
         }
-        analyzer = SpectrumAnalyzer(sampleRate: info.sampleRate, rowCount: Self.rowCount)
+        spectrum = SpectrumAnalyzer(
+            ring: ring, sampleRate: info.sampleRate, rowCount: Self.rowCount)
+        waveform = WaveformAnalyzer(ring: ring)
         onStatus?("\(info.outputDeviceName) · \(Int(info.sampleRate / 1000)) kHz")
     }
 
@@ -52,8 +58,11 @@ final class AudioEngine {
         source.schedule(deadline: .now(), repeating: .milliseconds(16))
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            self.analyzer?.drainColumns { column in
-                self.onColumn?(column)
+            switch self.visualization {
+            case .spectrogram:
+                self.spectrum?.drainColumns { self.onColumn?($0) }
+            case .waveform:
+                self.waveform?.drainEnvelopes { self.onEnvelope?($0, $1) }
             }
         }
         source.resume()
