@@ -195,8 +195,29 @@ and system-wide playback stays broken even after the process is gone — the dev
 completely normal, which makes it very confusing to diagnose. Recovery is `sudo killall coreaudiod`.
 The probe handles SIGTERM as well as SIGINT so `pkill` shuts it down cleanly.
 
-Still unverified: whether the tapped signal is attenuated by system output volume (which would dim
-the spectrogram when you turn the music down). Test by holding playback steady and changing volume.
+**The tap is upstream of the output volume, so turning the music down does not dim the picture.**
+This was the last open question from P0 and the answer is the one you want: a 0.5-amplitude tone
+(-6.02 dBFS) reads back as exactly 0.5000 at 4%, 10%, 25%, 49%, 75% and 100% system volume. Not
+approximately — bit-identical across a 25x range. The visualization tracks what the application is
+playing, not how loud the speakers are set, which is the correct behaviour for a meter. It follows
+that no volume compensation is needed anywhere in the chain, and that a `kAudioDevicePropertyVolumeScalar`
+listener would be pointless.
+
+**Volume tests can be run in total silence.** Muting is applied after the tap as well, so
+"muted at 75%" and "muted at 10%" are both completely inaudible yet still produce a full-scale
+capture. That turns a test that seems to require blasting a tone through the speakers into one that
+makes no sound at all, and it is the only way to sweep the volume range without being obnoxious
+about it. Set the volume, mute, play a known-amplitude WAV, read `per-buffer peak` from the probe.
+
+One trap: change the volume *while* the probe is running and the ramp itself gets captured, which
+showed up once as a 0.5824 peak — a 16% overshoot that looked like level-dependent processing and
+was nothing of the kind. Set the volume before the run starts, and re-run any outlier before
+believing it. Both retries at 100% returned exactly 0.5000.
+
+Also seen, and consistent with the teardown hazard above: at volume 0 with the device otherwise
+idle, `tap.stop()` blocked long enough for the probe's 3-second watchdog to fire and `_exit`. The
+watchdog did its job — the machine's audio stayed healthy — but it is a reminder that the blocking
+teardown is a live hazard, not a historical one.
 
 ## P1–P3 findings
 
