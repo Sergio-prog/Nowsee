@@ -18,14 +18,27 @@ public final class SystemAudioTap {
     public var onRawBuffers: RawHandler?
     public var onStereoAudio: StereoHandler?
     public var onOutputDeviceChange: ((StreamInfo?) -> Void)?
+    public var onReconfigure: ((String) -> Void)?
     public private(set) var tapDescriptionSummary = ""
     public private(set) var aggregateInputLayout = ""
     public private(set) var streamInfo: StreamInfo?
 
+    private struct InstalledListener {
+        let object: AudioObjectID
+        let address: AudioObjectPropertyAddress
+        let block: AudioObjectPropertyListenerBlock
+    }
+
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
-    private var deviceListener: AudioObjectPropertyListenerBlock?
+    private var systemListeners: [InstalledListener] = []
+    private var deviceListeners: [InstalledListener] = []
+    private var pendingRebuild: DispatchWorkItem?
+    private let rebuildDebounce = 0.35
+    private let settleWindow = 0.5
+    private var lastRebuildFinished: CFAbsoluteTime = 0
+    private var reconfigureCount = 0
 
     private let ioQueue = DispatchQueue(label: "sh.nowsee.tap.io", qos: .userInteractive)
     private let controlQueue = DispatchQueue(label: "sh.nowsee.tap.control")
@@ -46,7 +59,7 @@ public final class SystemAudioTap {
     }
 
     deinit {
-        removeDefaultDeviceListener()
+        remove(&systemListeners)
         teardownChain()
         for buffer in [mixdown, leftChannel, rightChannel] {
             buffer.deinitialize(count: channelCapacity)
@@ -56,14 +69,18 @@ public final class SystemAudioTap {
 
     public func start(onMonoAudio: @escaping MonoHandler) throws {
         handler = onMonoAudio
-        try buildChain()
-        installDefaultDeviceListener()
+        try controlQueue.sync { try buildChain() }
+        installSystemListeners()
     }
 
     public func stop() {
-        removeDefaultDeviceListener()
+        removeSystemListeners()
         handler = nil
-        teardownChain()
+        controlQueue.sync {
+            pendingRebuild?.cancel()
+            pendingRebuild = nil
+            teardownChain()
+        }
     }
 
     private func buildChain() throws {
@@ -131,9 +148,13 @@ public final class SystemAudioTap {
             teardownChain()
             throw AudioTapError.osStatus("AudioDeviceStart", status)
         }
+
+        installDeviceListeners(outputID)
     }
 
     private func teardownChain() {
+        remove(&deviceListeners)
+
         if let ioProcID, aggregateID != AudioObjectID(kAudioObjectUnknown) {
             AudioDeviceStop(aggregateID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
@@ -151,30 +172,84 @@ public final class SystemAudioTap {
         streamInfo = nil
     }
 
-    private func installDefaultDeviceListener() {
-        var address = propertyAddress(kAudioHardwarePropertyDefaultOutputDevice)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            self?.rebuildForNewOutputDevice()
+    public func simulateReconfiguration() {
+        controlQueue.async { [weak self] in
+            self?.scheduleRebuild("simulated reconfiguration")
         }
-        deviceListener = block
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &address, controlQueue, block
-        )
     }
 
-    private func removeDefaultDeviceListener() {
-        guard let deviceListener else { return }
-        var address = propertyAddress(kAudioHardwarePropertyDefaultOutputDevice)
-        AudioObjectRemovePropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &address, controlQueue, deviceListener
-        )
-        self.deviceListener = nil
+    private func listen(
+        _ object: AudioObjectID,
+        _ selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        reason: String,
+        into store: inout [InstalledListener]
+    ) {
+        var address = propertyAddress(selector, scope: scope)
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.scheduleRebuild(reason)
+        }
+        let status = AudioObjectAddPropertyListenerBlock(object, &address, controlQueue, block)
+        guard status == noErr else { return }
+        store.append(InstalledListener(object: object, address: address, block: block))
     }
 
-    private func rebuildForNewOutputDevice() {
+    private func remove(_ store: inout [InstalledListener]) {
+        for listener in store {
+            var address = listener.address
+            AudioObjectRemovePropertyListenerBlock(
+                listener.object, &address, controlQueue, listener.block)
+        }
+        store.removeAll()
+    }
+
+    private func installSystemListeners() {
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        listen(
+            system, kAudioHardwarePropertyDefaultOutputDevice, reason: "default output changed",
+            into: &systemListeners)
+    }
+
+    private func removeSystemListeners() {
+        controlQueue.sync { remove(&systemListeners) }
+    }
+
+    private func installDeviceListeners(_ deviceID: AudioDeviceID) {
+        listen(
+            deviceID, kAudioDevicePropertyDeviceHasChanged, reason: "device reconfigured",
+            into: &deviceListeners)
+        listen(
+            deviceID, kAudioDevicePropertyNominalSampleRate, reason: "sample rate changed",
+            into: &deviceListeners)
+        listen(
+            deviceID, kAudioDevicePropertyDeviceIsAlive, reason: "device liveness changed",
+            into: &deviceListeners)
+        listen(
+            deviceID, kAudioDevicePropertyStreamFormat, scope: kAudioObjectPropertyScopeOutput,
+            reason: "stream format changed", into: &deviceListeners)
+    }
+
+    private func scheduleRebuild(_ reason: String) {
+        guard CFAbsoluteTimeGetCurrent() - lastRebuildFinished > settleWindow else { return }
+        pendingRebuild?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.rebuildChain(reason)
+        }
+        pendingRebuild = item
+        controlQueue.asyncAfter(deadline: .now() + rebuildDebounce, execute: item)
+    }
+
+    private func rebuildChain(_ reason: String) {
         guard handler != nil else { return }
         teardownChain()
-        try? buildChain()
+        do {
+            try buildChain()
+            reconfigureCount += 1
+            onReconfigure?("\(reason) — recovered after \(reconfigureCount)")
+        } catch {
+            onReconfigure?("\(reason) — rebuild failed: \(error)")
+        }
+        lastRebuildFinished = CFAbsoluteTimeGetCurrent()
         onOutputDeviceChange?(streamInfo)
     }
 

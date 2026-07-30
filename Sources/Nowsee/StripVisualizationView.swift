@@ -17,7 +17,10 @@ final class StripVisualizationView: NSView {
     var fadeWidth: CGFloat = 6 { didSet { needsDisplay = true } }
     var opacity: CGFloat = 1 { didSet { needsDisplay = true } }
     var gain: Float = 4 { didSet { needsDisplay = true } }
+    var barCount = 56 { didSet { needsDisplay = true } }
+    var barGap: Float = 0.16 { didSet { needsDisplay = true } }
     var showsIdleIndicator = true
+    var isPreview = false
 
     private var rows: Int
     private var columnCount: Int
@@ -274,33 +277,38 @@ final class StripVisualizationView: NSView {
     private func fillBarsPixels() {
         for index in pixels.indices { pixels[index] = 0 }
 
-        let barWidth = max(2, columnCount / 28)
-        let gap = barWidth > 3 ? 1 : 0
+        let slots = max(4, min(barCount, columnCount / 2))
+        let slotWidth = Float(columnCount) / Float(slots)
+        let gapColumns = slotWidth * barGap
 
-        for start in stride(from: 0, to: columnCount, by: barWidth) {
-            let end = min(columnCount, start + barWidth - gap)
+        for slot in 0..<slots {
+            let slotStart = Float(slot) * slotWidth
+            let start = Int((slotStart + gapColumns * 0.5).rounded())
+            let end = min(columnCount, Int((slotStart + slotWidth - gapColumns * 0.5).rounded()))
             guard start < end else { continue }
 
-            var value = SIMD4<Float>.zero
-            for column in start..<min(columnCount, start + barWidth) {
-                value = simd_max(value, scaledLevel(at: column))
-            }
-
+            let sample = min(columnCount - 1, Int(slotStart + slotWidth * 0.5))
+            let value = scaledLevel(at: sample)
             let height = max(value.x, value.y)
             let cap = max(value.z, value.w)
-            let top = rows - 1 - Int((height * Float(rows - 1)).rounded())
+
+            let filled = height * Float(rows)
             let capRow = rows - 1 - Int((cap * Float(rows - 1)).rounded())
 
             for column in start..<end {
                 if capRow >= 0, capRow < rows {
                     writePixel(column: column, row: capRow, color: lookup[250], alpha: 1)
                 }
-                guard top < rows else { continue }
-                for row in max(0, top)..<rows {
-                    let depth = Float(rows - 1 - row) / max(height * Float(rows - 1), 0.001)
+                for row in 0..<rows {
+                    let fromBottom = Float(rows - row)
+                    let coverage = min(1, max(0, filled - fromBottom + 1))
+                    guard coverage > 0 else { continue }
+                    let depth = Float(rows - 1 - row) / max(filled, 0.001)
                     let shade = 0.35 + min(1, depth) * 0.6
                     let color = lookup[max(0, min(255, Int(shade * 255)))]
-                    writePixel(column: column, row: row, color: color, alpha: max(0.45, height))
+                    writePixel(
+                        column: column, row: row, color: color,
+                        alpha: max(0.45, height) * coverage)
                 }
             }
         }
@@ -312,19 +320,21 @@ final class StripVisualizationView: NSView {
 
         for column in 0..<columnCount {
             let level = scaledLevel(at: column)
-            let top = max(0, Int((centre - level.x * centre).rounded(.down)))
-            let bottom = min(rows - 1, Int((centre + level.y * centre).rounded(.up)))
-            guard top <= bottom else { continue }
 
-            for row in top...bottom {
+            for row in 0..<rows {
                 let isLower = Float(row) > centre
                 let limit = isLower ? level.y : level.x
                 let distance = abs(Float(row) - centre) / max(centre, 0.001)
+                let coverage = min(1, max(0, (limit - distance) * centre + 0.5))
+                guard coverage > 0 else { continue }
+
                 let depth = limit > 0.001 ? min(1, distance / limit) : 0
                 let shade = 0.45 + depth * 0.5
                 var color = lookup[max(0, min(255, Int(shade * 255)))]
                 if isLower { color *= 0.82 }
-                writePixel(column: column, row: row, color: color, alpha: max(0.4, limit))
+                writePixel(
+                    column: column, row: row, color: color,
+                    alpha: max(0.4, limit) * coverage)
             }
         }
     }

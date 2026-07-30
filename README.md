@@ -90,7 +90,9 @@ menu bar strip. Everything persists in `UserDefaults`.
 |---|---|---|
 | Visualization | Spectrogram, Waveform, Ocean, Bars, Stereo, Morph | Spectrogram |
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
-| Smoothing | 0–100% (Bars, Stereo, Morph) | 55% |
+| Smoothing | 0–100% (Bars, Stereo, Morph, Ocean) | 55% |
+| Bars | 8–96 (Bars only) | 56 |
+| Bar spacing | 0–60% of each slot (Bars only) | 16% |
 | Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
 | Custom colours | low / mid / high stops, any colour | blue → green → white |
 | Frame rate | 15 / 30 / 60, capped to the display refresh rate | 30 |
@@ -169,6 +171,12 @@ Three defences, all now in place:
 
 - `SystemAudioTap` listens on `kAudioHardwarePropertyDefaultOutputDevice` and rebuilds the whole
   tap/aggregate chain when the default output changes, so it never holds a stale device.
+- It also listens on the current output device for `kAudioDevicePropertyDeviceHasChanged`,
+  `NominalSampleRate`, `DeviceIsAlive` and `StreamFormat`. Bluetooth devices renegotiate their format
+  on their own schedule — changing AirPods volume can do it — and the tap goes silent until the chain
+  is rebuilt. Rebuilds are debounced 0.35 s so a burst of notifications costs one rebuild, and all
+  chain mutation is serialized on `controlQueue`. `NOWSEE_SELFTEST=reconfigure` forces rebuilds on a
+  timer to exercise the path without touching real hardware.
 - Teardown is idempotent and ordered: stop the IOProc, destroy the IOProc, destroy the aggregate,
   destroy the tap.
 - The probe arms a 3-second watchdog before teardown and `_exit`s if it overruns, so a blocked
@@ -253,6 +261,21 @@ attack/release rates together, because spatial stepping and temporal flicker are
 Blurring is energy-preserving, so a narrow peak gets shorter as smoothing rises. Broadband music
 barely changes; an isolated pure tone visibly shrinks. Sensitivity compensates, and deliberately is
 not applied automatically — coupling the two would make the gain slider fight the smoothing slider.
+
+**Sharp edges had two causes, and band smoothing fixed neither.** `smoothstep` with `fwidth(y)`
+antialiases only along Y, so wherever the level changes quickly between bands the boundary is nearly
+vertical and gets no antialiasing at all. And sampling 128 bands through a linear filter produces a
+piecewise-linear curve — visibly faceted, with a corner at every band centre. The fixes are 4× MSAA
+(`MTKView.sampleCount`, plus `rasterSampleCount` on every pipeline) and Catmull-Rom interpolation
+across four band samples, which is C1-continuous so the corners disappear. Together they cost about
+one point of CPU: 9.4% → 10.5% at 60 fps.
+
+**Never listen to a CoreAudio property you mutate yourself.** Adding a
+`kAudioHardwarePropertyDevices` listener to detect device reconfiguration produced an infinite
+rebuild loop — creating and destroying the private aggregate *is* a device-list change, so every
+rebuild retriggered itself, 29 times in 18 seconds. The device-list listener is gone; default-output
+and per-device liveness listeners cover the same failure without the feedback. A 0.5 s settle window
+after each rebuild guards against any other self-triggering property.
 
 **Rate-limiting off a coarser timer quantizes badly.** The drain timer ticks every 16 ms, so a
 naive `elapsed >= 1/30` test skips the 32 ms tick and fires at 48 ms — a requested 30 fps silently

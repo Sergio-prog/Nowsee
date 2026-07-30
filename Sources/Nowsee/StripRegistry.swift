@@ -48,6 +48,9 @@ final class StripRegistry {
         strip.mode = settings.visualization
         strip.apply(palette: settings.palette)
         strip.gain = Float(settings.waveformGain)
-        strip.redrawInterval = 1.0 / Double(settings.frameRate)
+        strip.barCount = Int(settings.equalizerBarCount)
+        strip.barGap = Float(settings.equalizerBarGap)
+        let rate = strip.isPreview ? min(settings.frameRate, 30) : settings.frameRate
+        strip.redrawInterval = 1.0 / Double(rate)
     }
 }

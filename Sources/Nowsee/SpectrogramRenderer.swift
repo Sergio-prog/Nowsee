@@ -60,17 +60,20 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
                               texture2d<float> palette [[texture(1)]],
                               constant float &writeOffset [[buffer(0)]],
                               constant float4 &background [[buffer(1)]],
-                              constant float &gain [[buffer(2)]]) {
+                              constant float &gain [[buffer(2)]],
+                              constant float4 &shape [[buffer(3)]]) {
     constexpr sampler wrapSampler(filter::linear, address::repeat);
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
 
     float width = float(envelope.get_width());
     float u = fract(in.uv.x + writeOffset);
+    float sigma = 0.8 + shape.z * 3.2;
+    float spread = 1.0 / (2.0 * sigma * sigma);
 
     float crestHeight = 0.0;
     float weightSum = 0.0;
-    for (int tap = -4; tap <= 4; ++tap) {
-        float weight = exp(-float(tap * tap) / 8.0);
+    for (int tap = -8; tap <= 8; ++tap) {
+        float weight = exp(-float(tap * tap) * spread);
         float2 bounds = envelope.sample(wrapSampler, float2(fract(u + float(tap) / width), 0.5)).rg;
         crestHeight += max(abs(bounds.r), abs(bounds.g)) * weight;
         weightSum += weight;
@@ -90,12 +93,28 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
 }
 
 constant float spectrumGain = 0.25;
-constant float barCount = 56.0;
-constant float barGap = 0.16;
+
+static float4 curveSample(texture2d<float> spectrum, sampler bandSampler, float u) {
+    float width = float(spectrum.get_width());
+    float x = u * width - 0.5;
+    float base = floor(x);
+    float t = x - base;
+
+    float4 p0 = spectrum.sample(bandSampler, float2((base - 0.5) / width, 0.5));
+    float4 p1 = spectrum.sample(bandSampler, float2((base + 0.5) / width, 0.5));
+    float4 p2 = spectrum.sample(bandSampler, float2((base + 1.5) / width, 0.5));
+    float4 p3 = spectrum.sample(bandSampler, float2((base + 2.5) / width, 0.5));
+
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return 0.5 * ((2.0 * p1)
+                + (-p0 + p2) * t
+                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3);
+}
 
 static float4 sampleBands(texture2d<float> spectrum, sampler bandSampler, float u, float gain) {
-    return clamp(
-        spectrum.sample(bandSampler, float2(u, 0.5)) * gain * spectrumGain, 0.0, 1.0);
+    return clamp(curveSample(spectrum, bandSampler, u) * gain * spectrumGain, 0.0, 1.0);
 }
 
 fragment float4 fragmentBars(VertexOut in [[stage_in]],
@@ -103,9 +122,12 @@ fragment float4 fragmentBars(VertexOut in [[stage_in]],
                              texture2d<float> palette [[texture(1)]],
                              constant float &writeOffset [[buffer(0)]],
                              constant float4 &background [[buffer(1)]],
-                             constant float &gain [[buffer(2)]]) {
+                             constant float &gain [[buffer(2)]],
+                             constant float4 &shape [[buffer(3)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
 
+    float barCount = shape.x;
+    float barGap = shape.y;
     float slot = in.uv.x * barCount;
     float within = fract(slot);
     float centre = (floor(slot) + 0.5) / barCount;
@@ -116,8 +138,9 @@ fragment float4 fragmentBars(VertexOut in [[stage_in]],
 
     float y = in.uv.y;
     float edge = fwidth(y) * 1.5 + 0.003;
-    float column = smoothstep(barGap * 0.5, barGap, within)
-                 * (1.0 - smoothstep(1.0 - barGap, 1.0 - barGap * 0.5, within));
+    float column = barGap <= 0.002 ? 1.0
+                 : smoothstep(barGap * 0.5, barGap, within)
+                     * (1.0 - smoothstep(1.0 - barGap, 1.0 - barGap * 0.5, within));
 
     float body = (1.0 - smoothstep(height - edge, height + edge, y)) * column;
     float capBand = (1.0 - smoothstep(0.012, 0.02, abs(y - cap))) * column;
@@ -182,6 +205,8 @@ fragment float4 fragmentMorph(VertexOut in [[stage_in]],
 """
 
 final class SpectrogramRenderer: NSObject, MTKViewDelegate {
+    static let sampleCount = 4
+
     let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let spectrogramPipeline: MTLRenderPipelineState
@@ -202,6 +227,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
     var mode: Visualization = .spectrogram
     var background = SIMD4<Float>(0, 0, 0, 1)
     var gain: Float = 4
+    var shape = SIMD4<Float>(56, 0.16, 0.55, 0)
 
     private(set) var columnsAppended = 0
     private(set) var framesDrawn = 0
@@ -234,6 +260,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
             descriptor.vertexFunction = vertexFunction
             descriptor.fragmentFunction = library.makeFunction(name: "fragmentMain")
             descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            descriptor.rasterSampleCount = Self.sampleCount
             spectrogramPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
 
             descriptor.fragmentFunction = library.makeFunction(name: "fragmentWaveform")
@@ -410,6 +437,8 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
             &backgroundColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
         var gainValue = gain
         encoder.setFragmentBytes(&gainValue, length: MemoryLayout<Float>.size, index: 2)
+        var shapeValue = shape
+        encoder.setFragmentBytes(&shapeValue, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         buffer.present(drawable)

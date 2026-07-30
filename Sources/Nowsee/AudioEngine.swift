@@ -26,6 +26,7 @@ final class AudioEngine {
     var onEnvelope: ((Float, Float) -> Void)?
     var onSpectrumBands: (([SIMD4<Float>]) -> Void)?
     var onStatus: ((String) -> Void)?
+    var onReconfigure: ((String) -> Void)?
 
     private(set) var isRunning = false
 
@@ -46,6 +47,9 @@ final class AudioEngine {
 
         tap.onOutputDeviceChange = { [weak self] _ in
             DispatchQueue.main.async { self?.rebuildAnalyzers() }
+        }
+        tap.onReconfigure = { [weak self] reason in
+            DispatchQueue.main.async { self?.onReconfigure?(reason) }
         }
         rebuildAnalyzers()
         startDrainTimer()
@@ -126,6 +130,10 @@ final class AudioEngine {
             spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
             startDrainTimer()
         }
+    }
+
+    func simulateReconfiguration() {
+        tap.simulateReconfiguration()
     }
 
     private func emitBandsIfDue() {

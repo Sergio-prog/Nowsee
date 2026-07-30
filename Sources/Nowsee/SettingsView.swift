@@ -11,6 +11,7 @@ struct LivePreview: NSViewRepresentable {
     func makeNSView(context: Context) -> StripVisualizationView {
         let view = StripVisualizationView(width: width, height: height)
         view.showsIdleIndicator = showsIdleIndicator
+        view.isPreview = true
         StripRegistry.shared.register(view)
         return view
     }
@@ -101,6 +102,15 @@ struct SettingsView: View {
                 Text("Most music peaks well below full scale, so a gain above 1 is usually needed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if settings.visualization == .bars {
+                slider(
+                    "Bars", value: $settings.equalizerBarCount, range: 8...96,
+                    display: "\(Int(settings.equalizerBarCount))")
+                slider(
+                    "Bar spacing", value: $settings.equalizerBarGap, range: 0...0.6,
+                    display: "\(Int(settings.equalizerBarGap * 100))%")
             }
 
             if settings.visualization.usesSmoothing {

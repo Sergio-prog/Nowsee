@@ -51,7 +51,7 @@ enum Visualization: String, CaseIterable, Identifiable {
     }
 
     var usesSmoothing: Bool {
-        source == .stereoSpectrum
+        source == .stereoSpectrum || self == .ocean
     }
 
     var usesGain: Bool {
@@ -85,6 +85,8 @@ final class NowseeSettings {
     var barOpacity: Double { didSet { save(barOpacity, "barOpacity") } }
     var waveformGain: Double { didSet { save(waveformGain, "waveformGain") } }
     var smoothing: Double { didSet { save(smoothing, "smoothing") } }
+    var equalizerBarCount: Double { didSet { save(equalizerBarCount, "equalizerBarCount") } }
+    var equalizerBarGap: Double { didSet { save(equalizerBarGap, "equalizerBarGap") } }
     var customLow: SIMD3<Float> { didSet { saveColor(customLow, "customLow") } }
     var customMid: SIMD3<Float> { didSet { saveColor(customMid, "customMid") } }
     var customHigh: SIMD3<Float> { didSet { saveColor(customHigh, "customHigh") } }
@@ -117,6 +119,8 @@ final class NowseeSettings {
         barOpacity = defaults.object(forKey: "barOpacity") as? Double ?? 1.0
         waveformGain = defaults.object(forKey: "waveformGain") as? Double ?? 4.0
         smoothing = defaults.object(forKey: "smoothing") as? Double ?? 0.55
+        equalizerBarCount = defaults.object(forKey: "equalizerBarCount") as? Double ?? 56
+        equalizerBarGap = defaults.object(forKey: "equalizerBarGap") as? Double ?? 0.16
         isLoading = false
     }
 

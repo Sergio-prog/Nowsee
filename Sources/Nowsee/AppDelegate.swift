@@ -39,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         engine.onStatus = { [weak self] status in
             self?.statusMenuItem.title = status
         }
+        engine.onReconfigure = { [weak self] reason in
+            self?.writeDiagnostic("tap rebuilt — \(reason)")
+        }
         engine.start()
 
         NotificationCenter.default.addObserver(
@@ -64,6 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if selfTests.contains("signal") {
             engine.startSyntheticSignal()
+        }
+        if selfTests.contains("reconfigure") {
+            for delay in [5.0, 9.0, 13.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.engine.simulateReconfiguration()
+                }
+            }
         }
         if selfTests.contains("settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
@@ -132,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let view = MTKView(frame: NSRect(x: 0, y: 0, width: 900, height: 320), device: renderer.device)
         view.colorPixelFormat = .bgra8Unorm
+        view.sampleCount = SpectrogramRenderer.sampleCount
         view.delegate = renderer
         view.layer?.isOpaque = false
         metalView = view
@@ -165,6 +176,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         renderer?.apply(palette: settings.palette)
         renderer?.background = SIMD4(0, 0, 0, Float(settings.windowOpacity))
         renderer?.gain = Float(settings.waveformGain)
+        renderer?.shape = SIMD4(
+            Float(settings.equalizerBarCount), Float(settings.equalizerBarGap),
+            Float(settings.smoothing), 0)
 
         metalView?.preferredFramesPerSecond = settings.frameRate
         metalView?.layer?.isOpaque = settings.windowOpacity >= 1
