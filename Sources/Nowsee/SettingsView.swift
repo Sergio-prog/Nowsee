@@ -89,16 +89,12 @@ struct SettingsView: View {
                     Text(option.title).tag(option)
                 }
             }
-            .pickerStyle(.segmented)
 
-            Text(
-                "Waveform and Ocean skip the FFT entirely — they reduce the signal to a min/max "
-                    + "envelope, so they cost less than the spectrogram."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            Text(settings.visualization.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            if settings.visualization.usesEnvelope {
+            if settings.visualization.usesGain {
                 slider(
                     "Sensitivity", value: $settings.waveformGain, range: 1...30,
                     display: String(format: "%.1f×", settings.waveformGain))

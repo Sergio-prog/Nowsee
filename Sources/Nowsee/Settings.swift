@@ -1,10 +1,18 @@
 import AppKit
 import Foundation
 
+enum SignalSource {
+    case spectrum
+    case envelope
+    case scope
+}
+
 enum Visualization: String, CaseIterable, Identifiable {
     case spectrogram
     case waveform
     case ocean
+    case stereo
+    case morph
 
     var id: String { rawValue }
 
@@ -13,11 +21,31 @@ enum Visualization: String, CaseIterable, Identifiable {
         case .spectrogram: return "Spectrogram"
         case .waveform: return "Waveform"
         case .ocean: return "Ocean"
+        case .stereo: return "Stereo"
+        case .morph: return "Morph"
         }
     }
 
-    var usesEnvelope: Bool {
-        self != .spectrogram
+    var detail: String {
+        switch self {
+        case .spectrogram: return "Scrolling frequency map, auto-contrasted."
+        case .waveform: return "Scrolling amplitude envelope around a centre line."
+        case .ocean: return "Scrolling swell that rises from the bottom edge."
+        case .stereo: return "Fixed window — left channel above the axis, right below."
+        case .morph: return "Fixed window — a smoothed line per channel that morphs in place."
+        }
+    }
+
+    var source: SignalSource {
+        switch self {
+        case .spectrogram: return .spectrum
+        case .waveform, .ocean: return .envelope
+        case .stereo, .morph: return .scope
+        }
+    }
+
+    var usesGain: Bool {
+        source != .spectrum
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import simd
 
 final class StripRegistry {
     static let shared = StripRegistry()
@@ -21,6 +22,12 @@ final class StripRegistry {
     func broadcast(low: Float, high: Float) {
         for strip in strips.allObjects {
             strip.append(low: low, high: high)
+        }
+    }
+
+    func broadcast(bounds: [SIMD4<Float>], trace: [SIMD2<Float>]) {
+        for strip in strips.allObjects {
+            strip.update(bounds: bounds, trace: trace)
         }
     }
 

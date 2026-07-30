@@ -10,7 +10,10 @@ APP := dist/Nowsee.app
 
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
+.PHONY: cert app check run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
+
+check:
+	$(SWIFT) run -c $(CONFIG) nowsee-check
 
 install: app
 	@pkill -INT -f "Nowsee.app/Contents/MacOS/Nowsee" 2>/dev/null || true

@@ -1,23 +1,39 @@
 import Foundation
 import NowseeCore
+import QuartzCore
+import simd
 
 final class AudioEngine {
     static let rowCount = 256
+    static let scopeColumns = 256
+    private static let drainTick = 0.016
 
     private let tap = SystemAudioTap()
     private let ring = AudioRingBuffer()
+    private let leftRing = AudioRingBuffer(capacity: 1 << 15)
+    private let rightRing = AudioRingBuffer(capacity: 1 << 15)
     private var spectrum: SpectrumAnalyzer?
     private var waveform: WaveformAnalyzer?
+    private var scope: ScopeAnalyzer?
     private var timer: DispatchSourceTimer?
+    private var synthetic: DispatchSourceTimer?
+    private var lastScopeEmit: CFTimeInterval = 0
 
     var visualization: Visualization = .spectrogram
+    var frameRate = 30
     var onColumn: (([Float]) -> Void)?
     var onEnvelope: ((Float, Float) -> Void)?
+    var onScope: (([SIMD4<Float>], [SIMD2<Float>]) -> Void)?
     var onStatus: ((String) -> Void)?
 
     private(set) var isRunning = false
 
     func start() {
+        tap.onStereoAudio = { [weak self] left, right, count in
+            self?.leftRing.write(left, count)
+            self?.rightRing.write(right, count)
+        }
+
         do {
             try tap.start { [weak self] samples, count in
                 self?.ring.write(samples, count)
@@ -50,21 +66,69 @@ final class AudioEngine {
         spectrum = SpectrumAnalyzer(
             ring: ring, sampleRate: info.sampleRate, rowCount: Self.rowCount)
         waveform = WaveformAnalyzer(ring: ring)
+        scope = ScopeAnalyzer(
+            left: leftRing, right: rightRing, columnCount: Self.scopeColumns)
         onStatus?("\(info.outputDeviceName) · \(Int(info.sampleRate / 1000)) kHz")
     }
 
     private func startDrainTimer() {
         let source = DispatchSource.makeTimerSource(queue: .main)
-        source.schedule(deadline: .now(), repeating: .milliseconds(16))
+        source.schedule(deadline: .now(), repeating: Self.drainTick)
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            if self.visualization.usesEnvelope {
-                self.waveform?.drainEnvelopes { self.onEnvelope?($0, $1) }
-            } else {
+            switch self.visualization.source {
+            case .spectrum:
                 self.spectrum?.drainColumns { self.onColumn?($0) }
+            case .envelope:
+                self.waveform?.drainEnvelopes { self.onEnvelope?($0, $1) }
+            case .scope:
+                self.emitScopeIfDue()
             }
         }
         source.resume()
         timer = source
+    }
+
+    func startSyntheticSignal() {
+        let block = 480
+        var phase = 0
+        let source = DispatchSource.makeTimerSource(queue: .main)
+        source.schedule(deadline: .now(), repeating: .milliseconds(10))
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            var left = [Float](repeating: 0, count: block)
+            var right = [Float](repeating: 0, count: block)
+            var mono = [Float](repeating: 0, count: block)
+
+            for index in 0..<block {
+                let position = Float(phase + index)
+                left[index] = sin(position * 2 * .pi / 240) * 0.6
+                right[index] = sin(position * 2 * .pi / 160) * 0.3
+                mono[index] = (left[index] + right[index]) * 0.5
+            }
+            phase += block
+
+            left.withUnsafeBufferPointer { self.leftRing.write($0.baseAddress!, block) }
+            right.withUnsafeBufferPointer { self.rightRing.write($0.baseAddress!, block) }
+            mono.withUnsafeBufferPointer { self.ring.write($0.baseAddress!, block) }
+        }
+        source.resume()
+        synthetic = source
+
+        if scope == nil {
+            scope = ScopeAnalyzer(
+                left: leftRing, right: rightRing, columnCount: Self.scopeColumns)
+            waveform = WaveformAnalyzer(ring: ring)
+            spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
+            startDrainTimer()
+        }
+    }
+
+    private func emitScopeIfDue() {
+        let now = CACurrentMediaTime()
+        let interval = 1.0 / Double(max(frameRate, 1)) - Self.drainTick / 2
+        guard now - lastScopeEmit >= interval else { return }
+        lastScopeEmit = now
+        scope?.snapshot { bounds, trace in onScope?(bounds, trace) }
     }
 }

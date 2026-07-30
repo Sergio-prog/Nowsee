@@ -31,6 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             StripRegistry.shared.broadcast(low: low, high: high)
             self?.wakeRendererIfNeeded()
         }
+        engine.onScope = { [weak self] bounds, trace in
+            self?.renderer?.update(bounds: bounds, trace: trace)
+            StripRegistry.shared.broadcast(bounds: bounds, trace: trace)
+            self?.wakeRendererIfNeeded()
+        }
         engine.onStatus = { [weak self] status in
             self?.statusMenuItem.title = status
         }
@@ -53,7 +58,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if ProcessInfo.processInfo.environment["NOWSEE_DIAGNOSTICS"] == "1" {
             startDiagnostics()
         }
-        if ProcessInfo.processInfo.environment["NOWSEE_SELFTEST"] == "settings" {
+        let selfTests = Set(
+            (ProcessInfo.processInfo.environment["NOWSEE_SELFTEST"] ?? "")
+                .split(separator: ",").map(String.init))
+
+        if selfTests.contains("signal") {
+            engine.startSyntheticSignal()
+        }
+        if selfTests.contains("settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 self?.showSettings()
             }
@@ -109,7 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setUpWindow() {
-        guard let renderer = SpectrogramRenderer(rowCount: AudioEngine.rowCount) else {
+        guard
+            let renderer = SpectrogramRenderer(
+                rowCount: AudioEngine.rowCount, scopeColumns: AudioEngine.scopeColumns)
+        else {
             statusMenuItem?.title = "Metal unavailable"
             return
         }
@@ -144,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func applySettings() {
         engine.visualization = settings.visualization
+        engine.frameRate = settings.frameRate
         renderer?.mode = settings.visualization
         renderer?.apply(palette: settings.palette)
         renderer?.background = SIMD4(0, 0, 0, Float(settings.windowOpacity))
@@ -267,6 +283,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 mode=\(self.settings.visualization.rawValue) \
                 columns=\(self.renderer?.columnsAppended ?? 0) \
                 frames=\(self.renderer?.framesDrawn ?? 0) \
+                peak=\(String(format: "%.3f", self.renderer?.scopePeak ?? 0)) \
+                strips=\(StripRegistry.shared.registeredCount) \
                 paused=\(self.isPaused) \
                 status=\(self.statusMenuItem.title)
                 """)

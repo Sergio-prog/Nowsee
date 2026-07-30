@@ -100,6 +100,7 @@ func asciiLine(_ column: [Float]) -> String {
 
 var analyzer: SpectrumAnalyzer?
 var columns: [[Float]] = []
+let ring = AudioRingBuffer()
 
 let meter = LevelMeter()
 let bufferProbe = BufferProbe()
@@ -111,7 +112,7 @@ print("nowsee-probe — Core Audio process tap check\n")
 do {
     try tap.start { samples, count in
         meter.accumulate(samples, count)
-        analyzer?.ingest(samples, count)
+        ring.write(samples, count)
     }
 } catch {
     report("FAILED: \(error)")
@@ -129,7 +130,7 @@ report("tap descr     : \(tap.tapDescriptionSummary)")
 report("aggregate in  : \(tap.aggregateInputLayout)")
 
 if wantsSpectrogram, let info = tap.streamInfo {
-    analyzer = SpectrumAnalyzer(sampleRate: info.sampleRate, rowCount: asciiRows)
+    analyzer = SpectrumAnalyzer(ring: ring, sampleRate: info.sampleRate, rowCount: asciiRows)
 }
 report("\nPlay something. Ctrl-C to stop.\n")
 

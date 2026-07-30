@@ -32,5 +32,10 @@ let package = Package(
                 ])
             ]
         ),
+        .executableTarget(
+            name: "nowsee-check",
+            dependencies: ["NowseeCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

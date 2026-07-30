@@ -12,9 +12,20 @@ which renders spectrograms from audio *files* — Nowsee does it continuously, i
 | P2 — Metal spectrogram + window | **working** |
 | P3 — menu bar strip | **working** |
 
-Live visualization of system audio, in a window and in the menu bar. Three modes — a scrolling
-spectrogram, a centred waveform, and Ocean, a filled wave that rises from the bottom edge with a lit
-crest. Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
+Live visualization of system audio, in a window and in the menu bar. Five modes in two families:
+
+*Scrolling* — history moves right to left.
+
+- **Spectrogram** — frequency map with auto-contrast
+- **Waveform** — amplitude envelope around a centre line
+- **Ocean** — filled swell rising from the bottom edge with a lit crest
+
+*Fixed window* — the picture stands still and changes shape in place, the way a DAW scope does.
+
+- **Stereo** — left channel above the axis, right channel below
+- **Morph** — one smoothed line per channel
+
+Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
 releases the audio tap. Verified capturing Spotify playback.
 
 The menu bar strip has three states: the scrolling spectrogram while audio plays, a thin flat line
@@ -43,6 +54,7 @@ Swift only. Everything the app needs is an Apple framework with no cross-languag
 ```sh
 make install         # build and install to /Applications, then launch
 make app             # build + sign dist/Nowsee.app (release by default)
+make check           # run the scope DSP checks (no audio needed)
 make run-app         # restart the dist/ build
 make probe-app       # build the P0 capture-verification app
 make run-probe-app   # launch it for 15s; writes ~/Library/Logs/nowsee-probe.log
@@ -50,10 +62,21 @@ make reset-tcc       # revoke the audio permission to re-test the prompt
 ```
 
 `NOWSEE_DIAGNOSTICS=1` makes the app append render stats to `~/Library/Logs/nowsee.log`
-every two seconds — Metal state, columns ingested, frames drawn, current device. `NOWSEE_SELFTEST=1`
-pauses capture at 5 s and resumes at 9 s, which is how the pause path gets exercised without a
-human clicking the menu. The probe's `--spectrogram` flag dumps an ASCII spectrogram to its log,
-which is how the DSP chain was validated before any Metal existed.
+every two seconds — Metal state, columns ingested, frames drawn, scope peak, registered strips,
+current device.
+
+`NOWSEE_SELFTEST` takes a comma-separated list. `signal` feeds a synthetic stereo tone
+(different frequency per channel) straight into the ring buffers, which drives every mode end to end
+**without playing anything through the speakers**; the reported peak should match the synthetic
+amplitude exactly. `settings` opens the settings window after 2 s and logs its geometry. `pause`
+exercises the pause path without a human clicking the menu.
+
+`make check` runs `nowsee-check`, which feeds known signals through `ScopeAnalyzer` and asserts on
+the results — stereo separation, trigger stability, silence handling. There is no test target
+because neither XCTest nor swift-testing ships with Command Line Tools, and this project has no
+Xcode project on purpose; an executable full of assertions is the version that actually runs here.
+The probe's `--spectrogram` flag dumps an ASCII spectrogram to its log, which is how the DSP chain
+was validated before any Metal existed.
 
 ## Settings
 
@@ -62,8 +85,8 @@ menu bar strip. Everything persists in `UserDefaults`.
 
 | Setting | Options | Default |
 |---|---|---|
-| Visualization | Spectrogram, Waveform, Ocean | Spectrogram |
-| Sensitivity | 1–30× (envelope modes only) | 4× |
+| Visualization | Spectrogram, Waveform, Ocean, Stereo, Morph | Spectrogram |
+| Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
 | Palette | Magma, Inferno, Viridis, Classic | Magma |
 | Frame rate | 15 / 30 / 60 / 120 fps | 30 |
 | Float above all windows | on / off | off |
@@ -195,6 +218,25 @@ it would freeze mid-scroll leaving a stale half-drawn image.
 
 Measured: ~9% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 30 MB resident.
 
+**A fixed-window scope needs a trigger, or it slides.** Re-mapping the newest N samples across the
+full width every frame does not stand still — features drift because the window start is wherever
+the audio clock happens to be. `ScopeAnalyzer` reads `windowSize + triggerSearch` samples and scans
+the lead-in for a rising zero crossing (with a small hysteresis threshold so noise near zero cannot
+trigger it), then measures from there. `make check` asserts on this directly: advance the ring by a
+quarter period of a steady tone and the emitted trace must not move. It measures 0.0000 drift.
+
+**Rate-limiting off a coarser timer quantizes badly.** The drain timer ticks every 16 ms, so a
+naive `elapsed >= 1/30` test skips the 32 ms tick and fires at 48 ms — a requested 30 fps silently
+became 21. Subtracting half a tick from the interval makes it land on 32 ms. Scope emission now
+tracks the configured frame rate 1:1.
+
+**Verifying a visualizer without playing audio.** Screenshots are unavailable (the shell has no
+Screen Recording permission) and playing test tones is obnoxious. `NOWSEE_SELFTEST=signal` writes a
+synthetic stereo tone directly into the ring buffers, which exercises analyzer, Metal upload, and
+menu bar strip end to end in silence. Because the tone's amplitude is known, the `peak=` field in
+the diagnostics log is a real assertion rather than a vague sign of life — 0.600 in, 0.600 out
+confirms the channel split and every stage after it.
+
 ## Layout
 
 ```
@@ -208,16 +250,20 @@ Sources/
     AutoContrast         decaying-histogram percentile clamp
     SpectrumAnalyzer     ring -> normalized spectrogram columns
     WaveformAnalyzer     ring -> min/max envelope, no FFT
+    ScopeAnalyzer        stereo rings -> trigger-aligned fixed window
   Nowsee/                the app
-    AudioEngine          owns the ring, drives the active analyzer
+    AudioEngine          owns the rings, drives the active analyzer
     SpectrogramRenderer  Metal, one pipeline per visualization
     StripVisualizationView  Core Graphics strip for menu bar and previews
     SettingsView         SwiftUI settings with live preview
   nowsee-probe/          P0 capture verification CLI
+  nowsee-check/          DSP assertions, no audio device needed
 ```
 
-Both analyzers read from one `AudioRingBuffer` owned by `AudioEngine`, so switching visualization
-costs nothing at the capture layer — only the active analyzer is drained.
+`SystemAudioTap` splits every callback into left and right channels first and derives the mono
+mixdown from those, so the scrolling modes and the stereo modes are fed from the same single pass.
+The three analyzers read from rings owned by `AudioEngine`, so switching visualization costs nothing
+at the capture layer — only the active analyzer runs.
 
 `swiftLanguageMode(.v5)` is set deliberately: CoreAudio's C callbacks fight Swift 6 strict
 concurrency, and the realtime audio thread has its own discipline that `Sendable` does not model.

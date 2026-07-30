@@ -23,6 +23,8 @@ final class StripVisualizationView: NSView {
     private var columnCount: Int
     private var intensities: [Float]
     private var envelopes: [SIMD2<Float>]
+    private var scopeBounds: [SIMD4<Float>]
+    private var scopeTrace: [SIMD2<Float>]
     private var pixels: [UInt8]
     private var writeIndex = 0
     private var lastRedraw: CFTimeInterval = 0
@@ -43,6 +45,8 @@ final class StripVisualizationView: NSView {
         columnCount = max(16, Int(width))
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
+        scopeBounds = [SIMD4<Float>](repeating: .zero, count: columnCount)
+        scopeTrace = [SIMD2<Float>](repeating: .zero, count: columnCount)
         pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
@@ -66,6 +70,8 @@ final class StripVisualizationView: NSView {
         rows = newRows
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
+        scopeBounds = [SIMD4<Float>](repeating: .zero, count: columnCount)
+        scopeTrace = [SIMD2<Float>](repeating: .zero, count: columnCount)
         pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
         writeIndex = 0
         needsDisplay = true
@@ -81,13 +87,15 @@ final class StripVisualizationView: NSView {
         if paused {
             for index in intensities.indices { intensities[index] = 0 }
             for index in envelopes.indices { envelopes[index] = .zero }
+            for index in scopeBounds.indices { scopeBounds[index] = .zero }
+            for index in scopeTrace.indices { scopeTrace[index] = .zero }
         }
         lastSignal = 0
         needsDisplay = true
     }
 
     func append(column: [Float]) {
-        guard !isPaused, mode == .spectrogram else { return }
+        guard !isPaused, mode.source == .spectrum else { return }
         if (column.max() ?? 0) > signalThreshold {
             lastSignal = CACurrentMediaTime()
         }
@@ -105,7 +113,7 @@ final class StripVisualizationView: NSView {
     }
 
     func append(low: Float, high: Float) {
-        guard !isPaused, mode.usesEnvelope else { return }
+        guard !isPaused, mode.source == .envelope else { return }
         if max(abs(low), abs(high)) > 0.002 {
             lastSignal = CACurrentMediaTime()
         }
@@ -113,8 +121,41 @@ final class StripVisualizationView: NSView {
         advance()
     }
 
+    func update(bounds: [SIMD4<Float>], trace: [SIMD2<Float>]) {
+        guard !isPaused, mode.source == .scope, !bounds.isEmpty else { return }
+
+        var peak: Float = 0
+        for column in 0..<columnCount {
+            let start = column * bounds.count / columnCount
+            let end = min(bounds.count, max(start + 1, (column + 1) * bounds.count / columnCount))
+            var lowest = SIMD2<Float>.zero
+            var highest = SIMD2<Float>.zero
+            var sum = SIMD2<Float>.zero
+
+            for index in start..<end {
+                let value = bounds[index]
+                lowest = simd_min(lowest, SIMD2(value.x, value.z))
+                highest = simd_max(highest, SIMD2(value.y, value.w))
+                sum += trace[index]
+            }
+
+            scopeBounds[column] = SIMD4(lowest.x, highest.x, lowest.y, highest.y)
+            scopeTrace[column] = sum / Float(end - start)
+            peak = max(peak, max(abs(lowest.x), abs(highest.x)))
+        }
+
+        if peak > 0.002 {
+            lastSignal = CACurrentMediaTime()
+        }
+        throttledRedraw()
+    }
+
     private func advance() {
         writeIndex = (writeIndex + 1) % columnCount
+        throttledRedraw()
+    }
+
+    private func throttledRedraw() {
         let now = CACurrentMediaTime()
         guard now - lastRedraw >= redrawInterval else { return }
         lastRedraw = now
@@ -139,6 +180,8 @@ final class StripVisualizationView: NSView {
         case .spectrogram: fillSpectrogramPixels()
         case .waveform: fillWaveformPixels()
         case .ocean: fillOceanPixels()
+        case .stereo: fillStereoPixels()
+        case .morph: fillMorphPixels()
         }
         applyEdgeFade()
 
@@ -234,6 +277,73 @@ final class StripVisualizationView: NSView {
                     column: column, row: rows - 1 - row, color: color,
                     alpha: isCrest ? 1 : max(0.45, heights[column]))
             }
+        }
+    }
+
+    private func fillStereoPixels() {
+        for index in pixels.indices { pixels[index] = 0 }
+        let centre = Float(rows - 1) / 2
+
+        for column in 0..<columnCount {
+            let value = scopeBounds[column]
+            let leftAmplitude = min(1, max(abs(value.x), abs(value.y)) * gain)
+            let rightAmplitude = min(1, max(abs(value.z), abs(value.w)) * gain)
+
+            let top = max(0, Int((centre - leftAmplitude * centre).rounded(.down)))
+            let bottom = min(rows - 1, Int((centre + rightAmplitude * centre).rounded(.up)))
+            guard top <= bottom else { continue }
+
+            for row in top...bottom {
+                let isLower = Float(row) > centre
+                let limit = isLower ? rightAmplitude : leftAmplitude
+                let distance = abs(Float(row) - centre) / max(centre, 0.001)
+                let depth = limit > 0.001 ? min(1, distance / limit) : 0
+                let shade = 0.45 + depth * 0.5
+                var color = lookup[max(0, min(255, Int(shade * 255)))]
+                if isLower { color *= 0.82 }
+                writePixel(column: column, row: row, color: color, alpha: max(0.4, limit))
+            }
+        }
+    }
+
+    private func fillMorphPixels() {
+        for index in pixels.indices { pixels[index] = 0 }
+        let centre = Float(rows - 1) / 2
+        let hot = lookup[217]
+        let cool = lookup[115]
+        var previous: SIMD2<Int>?
+
+        for column in 0..<columnCount {
+            var total = SIMD2<Float>.zero
+            var weightSum: Float = 0
+            for tap in -2...2 {
+                let index = min(columnCount - 1, max(0, column + tap))
+                let weight = exp(-Float(tap * tap) / 4)
+                total += scopeTrace[index] * weight
+                weightSum += weight
+            }
+
+            let value = total / weightSum * gain * 3
+            let current = SIMD2(
+                row(for: value.x, centre: centre), row(for: value.y, centre: centre))
+            let start = previous ?? current
+
+            drawSegment(column: column, from: start.y, to: current.y, color: cool, alpha: 0.7)
+            drawSegment(column: column, from: start.x, to: current.x, color: hot, alpha: 1)
+            previous = current
+        }
+    }
+
+    private func row(for value: Float, centre: Float) -> Int {
+        let clamped = max(-1, min(1, value))
+        return max(0, min(rows - 1, Int((centre - clamped * centre).rounded())))
+    }
+
+    private func drawSegment(
+        column: Int, from: Int, to: Int, color: SIMD4<Float>, alpha: Float
+    ) {
+        for row in min(from, to)...max(from, to) {
+            writePixel(column: column, row: row, color: color, alpha: alpha)
         }
     }
 
