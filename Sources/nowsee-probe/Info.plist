@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>sh.nowsee.probe</string>
+	<key>CFBundleName</key>
+	<string>nowsee-probe</string>
+	<key>CFBundleExecutable</key>
+	<string>nowsee-probe</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.4</string>
+	<key>LSBackgroundOnly</key>
+	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Nowsee reads the audio your Mac is playing so it can draw a live spectrogram of it.</string>
+</dict>
+</plist>
