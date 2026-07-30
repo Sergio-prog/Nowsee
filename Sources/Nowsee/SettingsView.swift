@@ -103,6 +103,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if settings.visualization.usesSmoothing {
+                slider(
+                    "Smoothing", value: $settings.smoothing, range: 0...1,
+                    display: "\(Int(settings.smoothing * 100))%")
+                Text(
+                    "Blends neighbouring frequency bands and slows the rise and fall, so the shape "
+                        + "flows instead of stepping between bands."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Palette").font(.subheadline)
                 ForEach(Palette.all, id: \.name) { option in

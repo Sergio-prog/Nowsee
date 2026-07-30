@@ -23,7 +23,7 @@ final class StripVisualizationView: NSView {
     private var columnCount: Int
     private var intensities: [Float]
     private var envelopes: [SIMD2<Float>]
-    private var levels: [SIMD2<Float>]
+    private var levels: [SIMD4<Float>]
     private var pixels: [UInt8]
     private var writeIndex = 0
     private var lastRedraw: CFTimeInterval = 0
@@ -44,7 +44,7 @@ final class StripVisualizationView: NSView {
         columnCount = max(16, Int(width))
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
-        levels = [SIMD2<Float>](repeating: .zero, count: columnCount)
+        levels = [SIMD4<Float>](repeating: .zero, count: columnCount)
         pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
@@ -68,7 +68,7 @@ final class StripVisualizationView: NSView {
         rows = newRows
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
-        levels = [SIMD2<Float>](repeating: .zero, count: columnCount)
+        levels = [SIMD4<Float>](repeating: .zero, count: columnCount)
         pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
         writeIndex = 0
         needsDisplay = true
@@ -117,7 +117,7 @@ final class StripVisualizationView: NSView {
         advance()
     }
 
-    func update(spectrum: [SIMD2<Float>]) {
+    func update(spectrum: [SIMD4<Float>]) {
         guard !isPaused, mode.source == .stereoSpectrum, !spectrum.isEmpty else { return }
 
         var peak: Float = 0
@@ -125,7 +125,7 @@ final class StripVisualizationView: NSView {
             let start = column * spectrum.count / columnCount
             let end = min(
                 spectrum.count, max(start + 1, (column + 1) * spectrum.count / columnCount))
-            var highest = SIMD2<Float>.zero
+            var highest = SIMD4<Float>.zero
             for index in start..<end {
                 highest = simd_max(highest, spectrum[index])
             }
@@ -166,6 +166,7 @@ final class StripVisualizationView: NSView {
         case .spectrogram: fillSpectrogramPixels()
         case .waveform: fillWaveformPixels()
         case .ocean: fillOceanPixels()
+        case .bars: fillBarsPixels()
         case .stereo: fillStereoPixels()
         case .morph: fillMorphPixels()
         }
@@ -266,16 +267,43 @@ final class StripVisualizationView: NSView {
         }
     }
 
-    private func smoothedLevel(at column: Int) -> SIMD2<Float> {
-        var total = SIMD2<Float>.zero
-        var weightSum: Float = 0
-        for tap in -2...2 {
-            let index = min(columnCount - 1, max(0, column + tap))
-            let weight = exp(-Float(tap * tap) / 4)
-            total += levels[index] * weight
-            weightSum += weight
+    private func scaledLevel(at column: Int) -> SIMD4<Float> {
+        simd_clamp(levels[column] * gain * 0.25, .zero, SIMD4(repeating: 1))
+    }
+
+    private func fillBarsPixels() {
+        for index in pixels.indices { pixels[index] = 0 }
+
+        let barWidth = max(2, columnCount / 28)
+        let gap = barWidth > 3 ? 1 : 0
+
+        for start in stride(from: 0, to: columnCount, by: barWidth) {
+            let end = min(columnCount, start + barWidth - gap)
+            guard start < end else { continue }
+
+            var value = SIMD4<Float>.zero
+            for column in start..<min(columnCount, start + barWidth) {
+                value = simd_max(value, scaledLevel(at: column))
+            }
+
+            let height = max(value.x, value.y)
+            let cap = max(value.z, value.w)
+            let top = rows - 1 - Int((height * Float(rows - 1)).rounded())
+            let capRow = rows - 1 - Int((cap * Float(rows - 1)).rounded())
+
+            for column in start..<end {
+                if capRow >= 0, capRow < rows {
+                    writePixel(column: column, row: capRow, color: lookup[250], alpha: 1)
+                }
+                guard top < rows else { continue }
+                for row in max(0, top)..<rows {
+                    let depth = Float(rows - 1 - row) / max(height * Float(rows - 1), 0.001)
+                    let shade = 0.35 + min(1, depth) * 0.6
+                    let color = lookup[max(0, min(255, Int(shade * 255)))]
+                    writePixel(column: column, row: row, color: color, alpha: max(0.45, height))
+                }
+            }
         }
-        return simd_clamp(total / weightSum * gain * 0.25, .zero, SIMD2(repeating: 1))
     }
 
     private func fillStereoPixels() {
@@ -283,7 +311,7 @@ final class StripVisualizationView: NSView {
         let centre = Float(rows - 1) / 2
 
         for column in 0..<columnCount {
-            let level = smoothedLevel(at: column)
+            let level = scaledLevel(at: column)
             let top = max(0, Int((centre - level.x * centre).rounded(.down)))
             let bottom = min(rows - 1, Int((centre + level.y * centre).rounded(.up)))
             guard top <= bottom else { continue }
@@ -309,7 +337,7 @@ final class StripVisualizationView: NSView {
         var previous: SIMD2<Int>?
 
         for column in 0..<columnCount {
-            let level = smoothedLevel(at: column)
+            let level = scaledLevel(at: column)
             let current = SIMD2(
                 row(for: level.x, centre: centre), row(for: -level.y, centre: centre))
             let start = previous ?? current
@@ -353,7 +381,7 @@ final class StripVisualizationView: NSView {
 
     private var baselineFraction: CGFloat {
         switch mode {
-        case .spectrogram, .ocean: return 1
+        case .spectrogram, .ocean, .bars: return 1
         case .waveform, .stereo, .morph: return 0.5
         }
     }

@@ -90,18 +90,45 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
 }
 
 constant float spectrumGain = 0.25;
+constant float barCount = 56.0;
+constant float barGap = 0.16;
 
-static float2 smoothedBands(texture2d<float> spectrum, sampler bandSampler, float u, float gain) {
-    float width = float(spectrum.get_width());
-    float2 total = float2(0.0);
-    float weightSum = 0.0;
-    for (int tap = -2; tap <= 2; ++tap) {
-        float weight = exp(-float(tap * tap) / 4.0);
-        float position = clamp(u + float(tap) / width, 0.0, 1.0);
-        total += spectrum.sample(bandSampler, float2(position, 0.5)).rg * weight;
-        weightSum += weight;
-    }
-    return clamp(total / weightSum * gain * spectrumGain, 0.0, 1.0);
+static float4 sampleBands(texture2d<float> spectrum, sampler bandSampler, float u, float gain) {
+    return clamp(
+        spectrum.sample(bandSampler, float2(u, 0.5)) * gain * spectrumGain, 0.0, 1.0);
+}
+
+fragment float4 fragmentBars(VertexOut in [[stage_in]],
+                             texture2d<float> spectrum [[texture(0)]],
+                             texture2d<float> palette [[texture(1)]],
+                             constant float &writeOffset [[buffer(0)]],
+                             constant float4 &background [[buffer(1)]],
+                             constant float &gain [[buffer(2)]]) {
+    constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
+
+    float slot = in.uv.x * barCount;
+    float within = fract(slot);
+    float centre = (floor(slot) + 0.5) / barCount;
+    float4 value = sampleBands(spectrum, clampSampler, centre, gain);
+
+    float height = max(value.r, value.g);
+    float cap = max(value.b, value.a);
+
+    float y = in.uv.y;
+    float edge = fwidth(y) * 1.5 + 0.003;
+    float column = smoothstep(barGap * 0.5, barGap, within)
+                 * (1.0 - smoothstep(1.0 - barGap, 1.0 - barGap * 0.5, within));
+
+    float body = (1.0 - smoothstep(height - edge, height + edge, y)) * column;
+    float capBand = (1.0 - smoothstep(0.012, 0.02, abs(y - cap))) * column;
+
+    float depth = height > 0.001 ? clamp(y / height, 0.0, 1.0) : 0.0;
+    float3 color = palette.sample(clampSampler, float2(mix(0.35, 0.95, depth), 0.5)).rgb;
+    float3 capColor = palette.sample(clampSampler, float2(0.98, 0.5)).rgb;
+
+    float coverage = clamp(body + capBand, 0.0, 1.0);
+    float3 lit = mix(color, capColor, capBand);
+    return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
 }
 
 fragment float4 fragmentStereo(VertexOut in [[stage_in]],
@@ -111,7 +138,7 @@ fragment float4 fragmentStereo(VertexOut in [[stage_in]],
                                constant float4 &background [[buffer(1)]],
                                constant float &gain [[buffer(2)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
-    float2 level = smoothedBands(spectrum, clampSampler, in.uv.x, gain);
+    float2 level = sampleBands(spectrum, clampSampler, in.uv.x, gain).rg;
 
     float y = in.uv.y * 2.0 - 1.0;
     float limit = y >= 0.0 ? level.r : level.g;
@@ -135,7 +162,7 @@ fragment float4 fragmentMorph(VertexOut in [[stage_in]],
                               constant float4 &background [[buffer(1)]],
                               constant float &gain [[buffer(2)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
-    float2 level = smoothedBands(spectrum, clampSampler, in.uv.x, gain);
+    float2 level = sampleBands(spectrum, clampSampler, in.uv.x, gain).rg;
 
     float y = in.uv.y * 2.0 - 1.0;
     float thickness = fwidth(y) * 1.5 + 0.006;
@@ -162,6 +189,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
     private let oceanPipeline: MTLRenderPipelineState
     private let stereoPipeline: MTLRenderPipelineState
     private let morphPipeline: MTLRenderPipelineState
+    private let barsPipeline: MTLRenderPipelineState
     private let spectrogram: MTLTexture
     private let envelope: MTLTexture
     private let bands: MTLTexture
@@ -219,6 +247,9 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
 
             descriptor.fragmentFunction = library.makeFunction(name: "fragmentMorph")
             morphPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+
+            descriptor.fragmentFunction = library.makeFunction(name: "fragmentBars")
+            barsPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
             NSLog("Nowsee: Metal pipeline failed — \(error)")
             return nil
@@ -247,7 +278,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         self.envelope = envelope
 
         let bandDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rg32Float,
+            pixelFormat: .rgba32Float,
             width: bandCount,
             height: 1,
             mipmapped: false
@@ -320,7 +351,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func update(spectrum: [SIMD2<Float>]) {
+    func update(spectrum: [SIMD4<Float>]) {
         guard !spectrum.isEmpty else { return }
 
         spectrum.withUnsafeBytes { bytes in
@@ -328,7 +359,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
                 region: MTLRegionMake2D(0, 0, spectrum.count, 1),
                 mipmapLevel: 0,
                 withBytes: bytes.baseAddress!,
-                bytesPerRow: spectrum.count * MemoryLayout<SIMD2<Float>>.stride
+                bytesPerRow: spectrum.count * MemoryLayout<SIMD4<Float>>.stride
             )
         }
 
@@ -360,6 +391,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         case .ocean: (pipeline, source) = (oceanPipeline, envelope)
         case .stereo: (pipeline, source) = (stereoPipeline, bands)
         case .morph: (pipeline, source) = (morphPipeline, bands)
+        case .bars: (pipeline, source) = (barsPipeline, bands)
         }
 
         encoder.setRenderPipelineState(pipeline)

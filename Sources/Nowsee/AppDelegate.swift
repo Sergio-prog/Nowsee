@@ -160,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func applySettings() {
         engine.visualization = settings.visualization
         engine.frameRate = settings.frameRate
+        engine.smoothing = Float(settings.smoothing)
         renderer?.mode = settings.visualization
         renderer?.apply(palette: settings.palette)
         renderer?.background = SIMD4(0, 0, 0, Float(settings.windowOpacity))

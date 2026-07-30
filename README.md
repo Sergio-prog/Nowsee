@@ -23,6 +23,7 @@ Live visualization of system audio, in a window and in the menu bar. Five modes 
 *Fixed* — frequency runs along X, so bass stays left and treble stays right. Nothing travels;
 the shape morphs in place, the way an FL Studio visualizer does.
 
+- **Bars** — classic equalizer rising from the bottom, with falling peak caps
 - **Stereo** — mirrored spectrum, left channel above the axis, right channel below
 - **Morph** — one line per channel, mirrored about the axis
 
@@ -87,8 +88,9 @@ menu bar strip. Everything persists in `UserDefaults`.
 
 | Setting | Options | Default |
 |---|---|---|
-| Visualization | Spectrogram, Waveform, Ocean, Stereo, Morph | Spectrogram |
+| Visualization | Spectrogram, Waveform, Ocean, Bars, Stereo, Morph | Spectrogram |
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
+| Smoothing | 0–100% (Bars, Stereo, Morph) | 55% |
 | Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
 | Custom colours | low / mid / high stops, any colour | blue → green → white |
 | Frame rate | 15 / 30 / 60, capped to the display refresh rate | 30 |
@@ -240,6 +242,17 @@ ring by a fraction of a window and a steady tone must not change bands. It moves
 
 The lesson generalises: the test has to exercise the thing that's hard, not the thing that's easy to
 generate. A pure sine was the one input that could not fail.
+
+**Smooth the bands, not the pixels.** 128 discrete bands read as visible chunks. The obvious fix —
+widening the gaussian in the fragment shader — costs a dynamic loop per pixel and has to be
+duplicated in the Core Graphics strip. Doing it once in the analyzer, over 128 values, is far
+cheaper and both renderers inherit it. The Smoothing control drives the kernel radius *and* the
+attack/release rates together, because spatial stepping and temporal flicker are the same complaint.
+`make check` measures the band-to-band step directly: 0.370 at 0%, 0.033 at 100%.
+
+Blurring is energy-preserving, so a narrow peak gets shorter as smoothing rises. Broadband music
+barely changes; an isolated pure tone visibly shrinks. Sensitivity compensates, and deliberately is
+not applied automatically — coupling the two would make the gain slider fight the smoothing slider.
 
 **Rate-limiting off a coarser timer quantizes badly.** The drain timer ticks every 16 ms, so a
 naive `elapsed >= 1/30` test skips the 32 ms tick and fires at 48 ms — a requested 30 fps silently

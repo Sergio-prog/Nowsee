@@ -25,7 +25,7 @@ final class StripRegistry {
         }
     }
 
-    func broadcast(spectrum: [SIMD2<Float>]) {
+    func broadcast(spectrum: [SIMD4<Float>]) {
         for strip in strips.allObjects {
             strip.update(spectrum: spectrum)
         }

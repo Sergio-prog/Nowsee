@@ -11,6 +11,7 @@ enum Visualization: String, CaseIterable, Identifiable {
     case spectrogram
     case waveform
     case ocean
+    case bars
     case stereo
     case morph
 
@@ -21,6 +22,7 @@ enum Visualization: String, CaseIterable, Identifiable {
         case .spectrogram: return "Spectrogram"
         case .waveform: return "Waveform"
         case .ocean: return "Ocean"
+        case .bars: return "Bars"
         case .stereo: return "Stereo"
         case .morph: return "Morph"
         }
@@ -31,6 +33,8 @@ enum Visualization: String, CaseIterable, Identifiable {
         case .spectrogram: return "Scrolling frequency map, auto-contrasted."
         case .waveform: return "Scrolling amplitude envelope around a centre line."
         case .ocean: return "Scrolling swell that rises from the bottom edge."
+        case .bars:
+            return "Classic equalizer — bars rising from the bottom with falling peak caps."
         case .stereo:
             return "Bass left, treble right. Left channel above the axis, right below."
         case .morph:
@@ -42,8 +46,12 @@ enum Visualization: String, CaseIterable, Identifiable {
         switch self {
         case .spectrogram: return .spectrum
         case .waveform, .ocean: return .envelope
-        case .stereo, .morph: return .stereoSpectrum
+        case .bars, .stereo, .morph: return .stereoSpectrum
         }
+    }
+
+    var usesSmoothing: Bool {
+        source == .stereoSpectrum
     }
 
     var usesGain: Bool {
@@ -76,6 +84,7 @@ final class NowseeSettings {
     var barFade: Double { didSet { save(barFade, "barFade") } }
     var barOpacity: Double { didSet { save(barOpacity, "barOpacity") } }
     var waveformGain: Double { didSet { save(waveformGain, "waveformGain") } }
+    var smoothing: Double { didSet { save(smoothing, "smoothing") } }
     var customLow: SIMD3<Float> { didSet { saveColor(customLow, "customLow") } }
     var customMid: SIMD3<Float> { didSet { saveColor(customMid, "customMid") } }
     var customHigh: SIMD3<Float> { didSet { saveColor(customHigh, "customHigh") } }
@@ -107,6 +116,7 @@ final class NowseeSettings {
         barFade = defaults.object(forKey: "barFade") as? Double ?? 6
         barOpacity = defaults.object(forKey: "barOpacity") as? Double ?? 1.0
         waveformGain = defaults.object(forKey: "waveformGain") as? Double ?? 4.0
+        smoothing = defaults.object(forKey: "smoothing") as? Double ?? 0.55
         isLoading = false
     }
 

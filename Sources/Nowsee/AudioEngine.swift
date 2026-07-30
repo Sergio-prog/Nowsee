@@ -21,9 +21,10 @@ final class AudioEngine {
 
     var visualization: Visualization = .spectrogram
     var frameRate = 30
+    var smoothing: Float = 0.55 { didSet { stereoSpectrum?.smoothing = smoothing } }
     var onColumn: (([Float]) -> Void)?
     var onEnvelope: ((Float, Float) -> Void)?
-    var onSpectrumBands: (([SIMD2<Float>]) -> Void)?
+    var onSpectrumBands: (([SIMD4<Float>]) -> Void)?
     var onStatus: ((String) -> Void)?
 
     private(set) var isRunning = false
@@ -69,6 +70,7 @@ final class AudioEngine {
         stereoSpectrum = StereoSpectrumAnalyzer(
             left: leftRing, right: rightRing, sampleRate: info.sampleRate,
             bandCount: Self.bandCount)
+        stereoSpectrum?.smoothing = smoothing
         onStatus?("\(info.outputDeviceName) · \(Int(info.sampleRate / 1000)) kHz")
     }
 
@@ -119,6 +121,7 @@ final class AudioEngine {
         if stereoSpectrum == nil {
             stereoSpectrum = StereoSpectrumAnalyzer(
                 left: leftRing, right: rightRing, sampleRate: 48000, bandCount: Self.bandCount)
+            stereoSpectrum?.smoothing = smoothing
             waveform = WaveformAnalyzer(ring: ring)
             spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
             startDrainTimer()

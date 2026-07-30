@@ -37,14 +37,14 @@ final class Harness {
         written += count
     }
 
-    func snapshot() -> [SIMD2<Float>]? {
-        var result: [SIMD2<Float>]?
+    func snapshot() -> [SIMD4<Float>]? {
+        var result: [SIMD4<Float>]?
         analyzer.snapshot { levels in result = levels }
         return result
     }
 
-    func settle(_ rounds: Int, _ count: Int, _ generator: (Int) -> (Float, Float)) -> [SIMD2<Float>] {
-        var latest: [SIMD2<Float>] = []
+    func settle(_ rounds: Int, _ count: Int, _ generator: (Int) -> (Float, Float)) -> [SIMD4<Float>] {
+        var latest: [SIMD4<Float>] = []
         for _ in 0..<rounds {
             write(count, generator)
             if let levels = snapshot() { latest = levels }
@@ -57,7 +57,7 @@ func tone(_ hz: Double, _ amplitude: Float) -> (Int) -> Float {
     { index in sin(Float(Double(index) * 2 * .pi * hz / sampleRate)) * amplitude }
 }
 
-func peakBand(_ levels: [SIMD2<Float>], _ channel: Int) -> Int {
+func peakBand(_ levels: [SIMD4<Float>], _ channel: Int) -> Int {
     var best = 0
     for index in levels.indices where levels[index][channel] > levels[best][channel] {
         best = index
@@ -135,6 +135,54 @@ do {
     check(
         "silence decays toward zero", (decayed.map(\.x).max() ?? 1) < 0.02,
         String(format: "%.4f", decayed.map(\.x).max() ?? 1))
+}
+
+func spread(_ levels: [SIMD4<Float>], _ channel: Int) -> Int {
+    let ceiling = levels.map { $0[channel] }.max() ?? 0
+    guard ceiling > 0 else { return 0 }
+    return levels.filter { $0[channel] > ceiling * 0.2 }.count
+}
+
+do {
+    let steady = tone(1000, 0.7)
+    let generator = { (index: Int) in (steady(index), steady(index)) }
+
+    let sharp = Harness()
+    sharp.analyzer.smoothing = 0
+    let sharpLevels = sharp.settle(40, windowSize, generator)
+
+    let soft = Harness()
+    soft.analyzer.smoothing = 1
+    let softLevels = soft.settle(40, windowSize, generator)
+
+    let sharpWidth = spread(sharpLevels, 0)
+    let softWidth = spread(softLevels, 0)
+    check(
+        "smoothing widens a tone across bands", softWidth > sharpWidth * 2,
+        "\(sharpWidth) bands at 0%, \(softWidth) at 100%")
+
+    var sharpStep: Float = 0
+    var softStep: Float = 0
+    for index in 1..<bandCount {
+        sharpStep = max(sharpStep, abs(sharpLevels[index].x - sharpLevels[index - 1].x))
+        softStep = max(softStep, abs(softLevels[index].x - softLevels[index - 1].x))
+    }
+    check(
+        "smoothing removes band-to-band steps", softStep < sharpStep * 0.6,
+        String(format: "step %.3f at 0%%, %.3f at 100%%", sharpStep, softStep))
+}
+
+do {
+    let harness = Harness()
+    let loud = tone(1000, 0.8)
+    let levels = harness.settle(40, windowSize) { index in (loud(index), loud(index)) }
+    check(
+        "peak cap sits at or above the level",
+        levels.allSatisfy { $0.z >= $0.x - 0.001 })
+
+    let quiet = harness.settle(3, windowSize) { _ in (0, 0) }
+    let held = zip(levels, quiet).contains { $1.z > $0.x * 0.5 }
+    check("peak cap lingers after the level drops", held)
 }
 
 print("")

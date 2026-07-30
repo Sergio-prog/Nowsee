@@ -6,6 +6,10 @@ public final class StereoSpectrumAnalyzer {
     public let bandCount: Int
     public let windowSize: Int
 
+    public var smoothing: Float = 0.45 {
+        didSet { if smoothing != oldValue { rebuildKernel() } }
+    }
+
     private let left: AudioRingBuffer
     private let right: AudioRingBuffer
     private let leftSTFT: STFT
@@ -16,12 +20,13 @@ public final class StereoSpectrumAnalyzer {
     private var rightFrame: UnsafeMutablePointer<Float>
     private var magnitudes: [Float]
     private var bands: [Float]
-    private var levels: [SIMD2<Float>]
+    private var shaped: [Float]
+    private var kernel: [Float] = [1]
+    private var levels: [SIMD4<Float>]
 
     private let floorDB: Float = -85
     private let spanDB: Float = 80
-    private let attack: Float = 0.55
-    private let release: Float = 0.12
+    private let peakDecay: Float = 0.94
 
     public init(
         left: AudioRingBuffer,
@@ -46,7 +51,9 @@ public final class StereoSpectrumAnalyzer {
         rightFrame.initialize(repeating: 0, count: windowSize)
         magnitudes = [Float](repeating: 0, count: leftSTFT.binCount)
         bands = [Float](repeating: 0, count: bandCount)
-        levels = [SIMD2<Float>](repeating: .zero, count: bandCount)
+        shaped = [Float](repeating: 0, count: bandCount)
+        levels = [SIMD4<Float>](repeating: .zero, count: bandCount)
+        rebuildKernel()
     }
 
     deinit {
@@ -56,7 +63,7 @@ public final class StereoSpectrumAnalyzer {
         rightFrame.deallocate()
     }
 
-    public func snapshot(_ emit: ([SIMD2<Float>]) -> Void) {
+    public func snapshot(_ emit: ([SIMD4<Float>]) -> Void) {
         let available = min(left.framesWritten, right.framesWritten)
         guard available >= UInt64(windowSize) else { return }
         guard left.read(into: leftFrame, count: windowSize, endingAt: available),
@@ -68,13 +75,29 @@ public final class StereoSpectrumAnalyzer {
         emit(levels)
     }
 
+    private func rebuildKernel() {
+        let radius = Int((smoothing * 12).rounded())
+        guard radius > 0 else {
+            kernel = [1]
+            return
+        }
+        let sigma = max(0.6, smoothing * 6)
+        let weights = (-radius...radius).map { exp(-Float($0 * $0) / (2 * sigma * sigma)) }
+        let total = weights.reduce(0, +)
+        kernel = weights.map { $0 / total }
+    }
+
     private func blend(channel: Int, frame: UnsafeMutablePointer<Float>, stft: STFT) {
+        let attack = 0.55 - smoothing * 0.4
+        let release = 0.14 - smoothing * 0.09
+
         var loudest: Float = 0
         vDSP_maxmgv(frame, 1, &loudest, vDSP_Length(windowSize))
 
         if loudest < 1e-6 {
             for index in 0..<bandCount {
                 levels[index][channel] *= 1 - release
+                levels[index][channel + 2] *= peakDecay
             }
             return
         }
@@ -83,10 +106,33 @@ public final class StereoSpectrumAnalyzer {
         map.apply(magnitudes, into: &bands)
 
         for index in 0..<bandCount {
-            let level = max(0, min(1, (bands[index] - floorDB) / spanDB))
+            bands[index] = max(0, min(1, (bands[index] - floorDB) / spanDB))
+        }
+        spread(bands, into: &shaped)
+
+        for index in 0..<bandCount {
+            let target = shaped[index]
             let previous = levels[index][channel]
-            let rate = level > previous ? attack : release
-            levels[index][channel] = previous + (level - previous) * rate
+            let rate = target > previous ? attack : release
+            let level = previous + (target - previous) * rate
+            levels[index][channel] = level
+            levels[index][channel + 2] = max(levels[index][channel + 2] * peakDecay, level)
+        }
+    }
+
+    private func spread(_ source: [Float], into destination: inout [Float]) {
+        guard kernel.count > 1 else {
+            destination = source
+            return
+        }
+        let radius = kernel.count / 2
+        for index in 0..<bandCount {
+            var total: Float = 0
+            for (offset, weight) in kernel.enumerated() {
+                let position = min(bandCount - 1, max(0, index + offset - radius))
+                total += source[position] * weight
+            }
+            destination[index] = total
         }
     }
 }
