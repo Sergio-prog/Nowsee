@@ -1,53 +1,111 @@
-import Foundation
+import AppKit
 import QuartzCore
 import simd
 
 final class PreviewSignal {
     static let shared = PreviewSignal()
 
-    private var timer: Timer?
+    private static let spectrumRate = 94.0
+    private static let envelopeRate = 187.5
+    private static let maxCatchUp = 0.1
+
+    private weak var host: NSWindow?
+    private var link: CADisplayLink?
     private var phase = 0.0
+    private var lastEmit: CFTimeInterval = 0
     private var lastRealSignal: CFTimeInterval = 0
+    private var columnDebt = 0.0
     private var peaks = [SIMD2<Float>](repeating: .zero, count: AudioEngine.bandCount)
+    private var column = [Float](repeating: 0, count: AudioEngine.rowCount)
+    private var bands = [SIMD4<Float>](repeating: .zero, count: AudioEngine.bandCount)
 
     private let quietFor: CFTimeInterval = 1.0
+
+    var isRunning: Bool { link != nil }
+    var hasHost: Bool { driver != nil }
+
+    private var driver: NSView? { host?.contentView }
 
     func noteRealSignal() {
         lastRealSignal = CACurrentMediaTime()
     }
 
-    func start() {
-        guard timer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-            self?.tick()
+    func attach(to window: NSWindow) {
+        host = window
+        applySettings()
+    }
+
+    func detach() {
+        host = nil
+        applySettings()
+    }
+
+    func applySettings() {
+        if driver != nil, NowseeSettings.shared.mockPreview {
+            startLink()
+        } else {
+            stopLink()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
+    private func startLink() {
+        guard link == nil, let driver else { return }
+        let link = driver.displayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        lastEmit = CACurrentMediaTime()
+        columnDebt = 0
+        self.link = link
     }
 
-    private func tick() {
-        guard CACurrentMediaTime() - lastRealSignal > quietFor else { return }
+    private func stopLink() {
+        link?.invalidate()
+        link = nil
+    }
 
-        switch NowseeSettings.shared.visualization.source {
-        case .spectrum:
-            for _ in 0..<3 {
-                phase += 0.011
-                StripRegistry.shared.broadcastPreview(column: mockColumn())
+    @objc private func tick(_ sender: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        guard now - lastRealSignal > quietFor else {
+            lastEmit = now
+            columnDebt = 0
+            return
+        }
+
+        let interval = 1.0 / Double(max(NowseeSettings.shared.frameRate, 1))
+        let elapsed = now - lastEmit
+        guard elapsed >= interval * 0.9 else { return }
+        lastEmit = now
+        emit(elapsed: min(elapsed, Self.maxCatchUp))
+    }
+
+    private func emit(elapsed: Double) {
+        let source = NowseeSettings.shared.visualization.source
+        StripRegistry.shared.withPreviewStrips { strips in
+            guard !strips.isEmpty else { return }
+
+            if source == .stereoSpectrum {
+                phase += elapsed
+                fillBands()
+                for strip in strips { strip.update(spectrum: bands) }
+                return
             }
-        case .envelope:
-            for _ in 0..<6 {
-                phase += 0.005
-                let envelope = mockEnvelope()
-                StripRegistry.shared.broadcastPreview(low: envelope.low, high: envelope.high)
+
+            let rate = source == .spectrum ? Self.spectrumRate : Self.envelopeRate
+            columnDebt = min(columnDebt + elapsed * rate, 64)
+            let count = Int(columnDebt)
+            guard count > 0 else { return }
+            columnDebt -= Double(count)
+
+            let step = elapsed / Double(count)
+            for _ in 0..<count {
+                phase += step
+                if source == .spectrum {
+                    fillColumn()
+                    for strip in strips { strip.append(column: column) }
+                } else {
+                    let envelope = mockEnvelope()
+                    for strip in strips { strip.append(low: envelope.low, high: envelope.high) }
+                }
             }
-        case .stereoSpectrum:
-            phase += 1.0 / 30
-            StripRegistry.shared.broadcastPreview(spectrum: mockBands())
         }
     }
 
@@ -59,23 +117,21 @@ final class PreviewSignal {
         return min(1, max(0, level * (1 - position * 0.2)))
     }
 
-    private func mockBands() -> [SIMD4<Float>] {
-        var result = [SIMD4<Float>](repeating: .zero, count: AudioEngine.bandCount)
+    private func fillBands() {
         for band in 0..<AudioEngine.bandCount {
             let position = Double(band) / Double(AudioEngine.bandCount - 1)
             let left = Float(contour(position, phase))
             let right = Float(contour(position, phase + 0.6))
             peaks[band] = simd_max(peaks[band] * 0.94, SIMD2(left, right))
-            result[band] = SIMD4(left, right, peaks[band].x, peaks[band].y)
+            bands[band] = SIMD4(left, right, peaks[band].x, peaks[band].y)
         }
-        return result
     }
 
-    private func mockColumn() -> [Float] {
-        (0..<AudioEngine.rowCount).map { row in
+    private func fillColumn() {
+        for row in 0..<AudioEngine.rowCount {
             let position = Double(row) / Double(AudioEngine.rowCount - 1)
             let sparkle = 0.85 + 0.15 * sin(phase * 9 + position * 24)
-            return Float(contour(position, phase) * sparkle)
+            column[row] = Float(contour(position, phase) * sparkle)
         }
     }
 

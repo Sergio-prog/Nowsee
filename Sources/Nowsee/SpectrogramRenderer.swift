@@ -67,12 +67,13 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
 
     float width = float(envelope.get_width());
     float u = fract(in.uv.x + writeOffset);
-    float sigma = 0.8 + shape.z * 3.2;
+    float sigma = 0.6 + shape.z * width * 0.018;
+    int radius = clamp(int(ceil(sigma * 2.0)), 1, 36);
     float spread = 1.0 / (2.0 * sigma * sigma);
 
     float crestHeight = 0.0;
     float weightSum = 0.0;
-    for (int tap = -8; tap <= 8; ++tap) {
+    for (int tap = -radius; tap <= radius; ++tap) {
         float weight = exp(-float(tap * tap) * spread);
         float2 bounds = envelope.sample(wrapSampler, float2(fract(u + float(tap) / width), 0.5)).rg;
         crestHeight += max(abs(bounds.r), abs(bounds.g)) * weight;

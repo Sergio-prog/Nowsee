@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-struct Palette {
+struct Palette: Equatable {
     let name: String
     let stops: [SIMD3<Float>]
 

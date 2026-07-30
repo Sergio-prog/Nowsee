@@ -13,6 +13,7 @@ final class StripRegistry {
         let previews = all.filter(\.isPreview)
         let live = all.filter { !$0.isPreview }
         return "preview=\(previews.filter(\.isActive).count)/\(previews.count) "
+            + "previewDraws=\(previews.reduce(0) { $0 + $1.drawsCompleted }) "
             + "bar=\(live.filter(\.isActive).count)/\(live.count)"
     }
 
@@ -43,22 +44,8 @@ final class StripRegistry {
         }
     }
 
-    func broadcastPreview(column: [Float]) {
-        for strip in strips.allObjects where strip.isPreview {
-            strip.append(column: column)
-        }
-    }
-
-    func broadcastPreview(low: Float, high: Float) {
-        for strip in strips.allObjects where strip.isPreview {
-            strip.append(low: low, high: high)
-        }
-    }
-
-    func broadcastPreview(spectrum: [SIMD4<Float>]) {
-        for strip in strips.allObjects where strip.isPreview {
-            strip.update(spectrum: spectrum)
-        }
+    func withPreviewStrips(_ body: ([StripVisualizationView]) -> Void) {
+        body(strips.allObjects.filter(\.isPreview))
     }
 
     func setPaused(_ paused: Bool) {
@@ -78,9 +65,9 @@ final class StripRegistry {
         strip.mode = settings.visualization
         strip.apply(palette: settings.palette)
         strip.gain = Float(settings.waveformGain)
+        strip.smoothing = Float(settings.smoothing)
         strip.barCount = Int(settings.equalizerBarCount)
         strip.barGap = Float(settings.equalizerBarGap)
-        let rate = strip.isPreview ? min(settings.frameRate, 30) : settings.frameRate
-        strip.redrawInterval = 1.0 / Double(rate)
+        strip.redrawInterval = 1.0 / Double(settings.frameRate)
     }
 }

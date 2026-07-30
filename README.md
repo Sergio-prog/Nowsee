@@ -91,13 +91,14 @@ shaped like music, generated numerically and never sent to an output device. Wit
 are a flat line whenever the room is quiet, which is exactly when someone is most likely to be
 adjusting palettes. Real audio takes over the moment it arrives, and the mock feeds only the preview
 strips: the menu bar keeps showing its true idle state, so it never claims to hear something it
-cannot. The generator runs only while the settings window is open.
+cannot. The generator runs only while the settings window is open, and a checkbox turns it off.
 
 | Setting | Options | Default |
 |---|---|---|
 | Visualization | Spectrogram, Waveform, Ocean, Bars, Stereo, Morph | Spectrogram |
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
 | Smoothing | 0–100% (Bars, Stereo, Morph, Ocean) | 55% |
+| Animate preview when quiet | on / off | on |
 | Bars | 8–96 (Bars only) | 56 |
 | Bar spacing | 0–60% of each slot (Bars only) | 16% |
 | Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
@@ -289,6 +290,36 @@ naive `elapsed >= 1/30` test skips the 32 ms tick and fires at 48 ms — a reque
 became 21. Subtracting half a tick from the interval makes it land on 32 ms. Scope emission now
 tracks the configured frame rate 1:1.
 
+**Two clocks at the same rate drop half the frames.** The preview generator ticked on a 30 Hz
+`Timer` and each strip independently throttled its redraw to 30 Hz. Any jitter — and a main-thread
+`Timer` always has some — lands the tick a hair under the throttle interval, so the frame is dropped
+entirely and the next one arrives 66 ms later. Measured: 19.5 fps delivered against 30 requested,
+varying frame to frame, which is exactly what "laggy" looks like. Two changes fix it: the generator
+runs off a `CADisplayLink` so it is vsync-aligned rather than free-running, and the throttle allows
+a 15% tolerance so a frame that is barely early still draws. Same measurement after: 30.0 fps, flat.
+
+Phase now advances by elapsed time rather than per tick, so a dropped frame changes nothing about
+the animation's speed, and the scrolling modes emit a time-derived number of columns per frame
+instead of a fixed count.
+
+**Count the frames that actually reached the screen.** Frame pacing is invisible to every check that
+does not measure it — the strip *was* redrawing, just not when it meant to. `previewDraws` in the
+diagnostics is a plain counter incremented in `draw`, and the delta between two log lines is the
+real delivered rate. That number is what turned "feels laggy" into "19.5 versus 30".
+
+**Smoothing has to be scaled to what it is smoothing.** The Ocean control was wired end to end and
+still did nothing visible: the blur was a fixed ±8 taps over a 1024-column envelope, so 100%
+smoothing moved the surface by under 1% of the window width. Sigma is now a fraction of the buffer
+width (1.8%, radius derived from it) rather than a constant, which is the same perceived blur in the
+900 px window, the 416 px preview and the 72 px menu bar strip even though each holds a different
+span of time. The Core Graphics strip had the older bug of the two — it ignored the setting entirely
+and hardcoded ±3 taps — which is why the settings preview was the place it looked most broken.
+
+The kernel lives in `EnvelopeSmoother` in `NowseeCore` so `make check` can assert on it: radius 2 at
+0% versus 17 at 100%, column-to-column step 0.0574 down to 0.0008, and a steady level passes through
+unchanged. The fragment shader duplicates the formula because it has to, so the constants are named
+in one place and copied deliberately.
+
 **Verifying a visualizer without playing audio.** Screenshots are unavailable (the shell has no
 Screen Recording permission) and playing test tones is obnoxious. `NOWSEE_SELFTEST=signal` writes a
 synthetic stereo tone directly into the ring buffers, which exercises analyzer, Metal upload, and
@@ -309,9 +340,11 @@ Sources/
     AutoContrast         decaying-histogram percentile clamp
     SpectrumAnalyzer     ring -> normalized spectrogram columns
     WaveformAnalyzer     ring -> min/max envelope, no FFT
-    ScopeAnalyzer        stereo rings -> trigger-aligned fixed window
+    EnvelopeSmoother     width-relative gaussian for the Ocean surface
+    StereoSpectrumAnalyzer  stereo rings -> log bands, smoothed, peak-held
   Nowsee/                the app
     AudioEngine          owns the rings, drives the active analyzer
+    PreviewSignal        display-link driven mock for the settings previews
     SpectrogramRenderer  Metal, one pipeline per visualization
     StripVisualizationView  Core Graphics strip for menu bar and previews
     SettingsView         SwiftUI settings with live preview

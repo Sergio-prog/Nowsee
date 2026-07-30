@@ -185,6 +185,43 @@ do {
     check("peak cap lingers after the level drops", held)
 }
 
+do {
+    let width = 416
+    var jagged = [Float](repeating: 0, count: width)
+    for index in 0..<width {
+        jagged[index] = index % 2 == 0 ? 0.05 : 0.22
+    }
+    var flat = [Float](repeating: 0, count: width)
+    var sharp = [Float](repeating: 0, count: width)
+    var soft = [Float](repeating: 0, count: width)
+
+    let sharpKernel = EnvelopeSmoother(smoothing: 0, width: width)
+    let softKernel = EnvelopeSmoother(smoothing: 1, width: width)
+    check(
+        "ocean smoothing widens the kernel", softKernel.radius > sharpKernel.radius * 4,
+        "radius \(sharpKernel.radius) at 0%, \(softKernel.radius) at 100%")
+
+    sharpKernel.smooth(jagged, startIndex: 0, gain: 1, into: &sharp)
+    softKernel.smooth(jagged, startIndex: 0, gain: 1, into: &soft)
+
+    var sharpStep: Float = 0
+    var softStep: Float = 0
+    for index in 1..<width {
+        sharpStep = max(sharpStep, abs(sharp[index] - sharp[index - 1]))
+        softStep = max(softStep, abs(soft[index] - soft[index - 1]))
+    }
+    check(
+        "ocean smoothing flattens column-to-column steps", softStep < sharpStep * 0.1,
+        String(format: "step %.4f at 0%%, %.4f at 100%%", sharpStep, softStep))
+
+    let level = [Float](repeating: 0.4, count: width)
+    softKernel.smooth(level, startIndex: 0, gain: 1, into: &flat)
+    check(
+        "ocean smoothing preserves a steady level",
+        flat.allSatisfy { abs($0 - 0.4) < 0.001 },
+        String(format: "%.4f", flat[width / 2]))
+}
+
 print("")
 if failures == 0 {
     print("all checks passed")

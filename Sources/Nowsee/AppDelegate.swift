@@ -194,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuBarStrip.opacity = settings.barOpacity
 
         StripRegistry.shared.applySettings()
+        PreviewSignal.shared.applySettings()
     }
 
     @objc private func showWindow() {
@@ -225,7 +226,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        PreviewSignal.shared.start()
+        if let settingsWindow {
+            PreviewSignal.shared.attach(to: settingsWindow)
+        }
 
         if ProcessInfo.processInfo.environment["NOWSEE_DIAGNOSTICS"] == "1" {
             logSettingsGeometry("immediately")
@@ -247,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         let closing = notification.object as? NSWindow
         if closing === settingsWindow {
-            PreviewSignal.shared.stop()
+            PreviewSignal.shared.detach()
         }
         guard closing === window else { return }
         metalView?.isPaused = true
@@ -306,6 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 frames=\(self.renderer?.framesDrawn ?? 0) \
                 peak=\(String(format: "%.3f", self.renderer?.scopePeak ?? 0)) \
                 \(StripRegistry.shared.activitySummary) \
+                mock=\(PreviewSignal.shared.isRunning) host=\(PreviewSignal.shared.hasHost) \
                 paused=\(self.isPaused) \
                 status=\(self.statusMenuItem.title)
                 """)

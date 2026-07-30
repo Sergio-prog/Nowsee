@@ -87,6 +87,7 @@ final class NowseeSettings {
     var smoothing: Double { didSet { save(smoothing, "smoothing") } }
     var equalizerBarCount: Double { didSet { save(equalizerBarCount, "equalizerBarCount") } }
     var equalizerBarGap: Double { didSet { save(equalizerBarGap, "equalizerBarGap") } }
+    var mockPreview: Bool { didSet { save(mockPreview, "mockPreview") } }
     var customLow: SIMD3<Float> { didSet { saveColor(customLow, "customLow") } }
     var customMid: SIMD3<Float> { didSet { saveColor(customMid, "customMid") } }
     var customHigh: SIMD3<Float> { didSet { saveColor(customHigh, "customHigh") } }
@@ -121,6 +122,7 @@ final class NowseeSettings {
         smoothing = defaults.object(forKey: "smoothing") as? Double ?? 0.55
         equalizerBarCount = defaults.object(forKey: "equalizerBarCount") as? Double ?? 56
         equalizerBarGap = defaults.object(forKey: "equalizerBarGap") as? Double ?? 0.16
+        mockPreview = defaults.object(forKey: "mockPreview") as? Bool ?? true
         isLoading = false
     }
 

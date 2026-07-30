@@ -1,4 +1,5 @@
 import AppKit
+import NowseeCore
 import QuartzCore
 import simd
 
@@ -11,14 +12,26 @@ final class StripVisualizationView: NSView {
 
     private let idleTimeout: CFTimeInterval = 1.5
     private let signalThreshold: Float = 0.2
+    private let redrawTolerance: CFTimeInterval = 0.85
 
     var redrawInterval: CFTimeInterval = 1.0 / 20
-    var mode: Visualization = .spectrogram { didSet { needsDisplay = true } }
-    var fadeWidth: CGFloat = 6 { didSet { needsDisplay = true } }
-    var opacity: CGFloat = 1 { didSet { needsDisplay = true } }
-    var gain: Float = 4 { didSet { needsDisplay = true } }
-    var barCount = 56 { didSet { needsDisplay = true } }
-    var barGap: Float = 0.16 { didSet { needsDisplay = true } }
+    var mode: Visualization = .spectrogram { didSet { invalidateIfChanged(mode != oldValue) } }
+    var fadeWidth: CGFloat = 6 { didSet { invalidateIfChanged(fadeWidth != oldValue) } }
+    var opacity: CGFloat = 1 { didSet { invalidateIfChanged(opacity != oldValue) } }
+    var gain: Float = 4 { didSet { invalidateIfChanged(gain != oldValue) } }
+    var smoothing: Float = 0.55 { didSet { invalidateIfChanged(smoothing != oldValue) } }
+    var barCount = 56 { didSet { invalidateIfChanged(barCount != oldValue) } }
+    var barGap: Float = 0.16 { didSet { invalidateIfChanged(barGap != oldValue) } }
+    var backgroundOpacity: CGFloat = 0 {
+        didSet { invalidateIfChanged(backgroundOpacity != oldValue) }
+    }
+    var cornerRadius: CGFloat = 0 {
+        didSet {
+            guard cornerRadius != oldValue else { return }
+            layer?.cornerRadius = cornerRadius
+            layer?.masksToBounds = cornerRadius > 0
+        }
+    }
     var showsIdleIndicator = true
     var isPreview = false
 
@@ -27,17 +40,24 @@ final class StripVisualizationView: NSView {
     private var intensities: [Float]
     private var envelopes: [SIMD2<Float>]
     private var levels: [SIMD4<Float>]
-    private var pixels: [UInt8]
+    private var magnitudes: [Float]
+    private var heights: [Float]
+    private var pixels: UnsafeMutablePointer<UInt8>
+    private var pixelCount: Int
+    private var bitmap: CGContext?
     private var writeIndex = 0
     private var lastRedraw: CFTimeInterval = 0
     private var lastSignal: CFTimeInterval = 0
     private var isPaused = false
     private var heartbeat: Timer?
+    private var palette = Palette.magma
     private var lookup = Palette.magma.lookupTable()
 
     override var isFlipped: Bool { true }
 
     var isActive: Bool { state == .active }
+
+    private(set) var drawsCompleted = 0
 
     private var state: DisplayState {
         if isPaused { return .paused }
@@ -50,8 +70,15 @@ final class StripVisualizationView: NSView {
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
         levels = [SIMD4<Float>](repeating: .zero, count: columnCount)
-        pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
+        magnitudes = [Float](repeating: 0, count: columnCount)
+        heights = [Float](repeating: 0, count: columnCount)
+        pixelCount = columnCount * rows * 4
+        pixels = .allocate(capacity: pixelCount)
+        pixels.initialize(repeating: 0, count: pixelCount)
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
+
+        wantsLayer = true
+        makeBitmap()
 
         let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.state != .active else { return }
@@ -63,7 +90,25 @@ final class StripVisualizationView: NSView {
 
     required init?(coder: NSCoder) { nil }
 
-    deinit { heartbeat?.invalidate() }
+    deinit {
+        heartbeat?.invalidate()
+        pixels.deallocate()
+    }
+
+    private func invalidateIfChanged(_ changed: Bool) {
+        if changed { needsDisplay = true }
+    }
+
+    private func makeBitmap() {
+        bitmap = CGContext(
+            data: pixels,
+            width: columnCount,
+            height: rows,
+            bitsPerComponent: 8,
+            bytesPerRow: columnCount * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
 
     func resize(width: CGFloat, height: CGFloat) {
         let newColumns = max(16, Int(width))
@@ -74,13 +119,23 @@ final class StripVisualizationView: NSView {
         intensities = [Float](repeating: 0, count: columnCount * rows)
         envelopes = [SIMD2<Float>](repeating: .zero, count: columnCount)
         levels = [SIMD4<Float>](repeating: .zero, count: columnCount)
-        pixels = [UInt8](repeating: 0, count: columnCount * rows * 4)
+        magnitudes = [Float](repeating: 0, count: columnCount)
+        heights = [Float](repeating: 0, count: columnCount)
+
+        pixels.deallocate()
+        pixelCount = columnCount * rows * 4
+        pixels = .allocate(capacity: pixelCount)
+        pixels.initialize(repeating: 0, count: pixelCount)
+        makeBitmap()
+
         writeIndex = 0
         needsDisplay = true
     }
 
-    func apply(palette: Palette) {
-        lookup = palette.lookupTable()
+    func apply(palette newPalette: Palette) {
+        guard newPalette != palette else { return }
+        palette = newPalette
+        lookup = newPalette.lookupTable()
         needsDisplay = true
     }
 
@@ -151,13 +206,19 @@ final class StripVisualizationView: NSView {
 
     private func throttledRedraw() {
         let now = CACurrentMediaTime()
-        guard now - lastRedraw >= redrawInterval else { return }
+        guard now - lastRedraw >= redrawInterval * redrawTolerance else { return }
         lastRedraw = now
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        drawsCompleted += 1
+
+        if backgroundOpacity > 0 {
+            context.setFillColor(CGColor(gray: 0, alpha: backgroundOpacity))
+            context.fill(bounds)
+        }
 
         if state == .paused {
             if showsIdleIndicator { drawPausedGlyph(in: context) }
@@ -177,24 +238,13 @@ final class StripVisualizationView: NSView {
         }
         applyEdgeFade()
 
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-            let image = CGImage(
-                width: columnCount,
-                height: rows,
-                bitsPerComponent: 8,
-                bitsPerPixel: 32,
-                bytesPerRow: columnCount * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                provider: provider,
-                decode: nil,
-                shouldInterpolate: false,
-                intent: .defaultIntent
-            )
-        else { return }
-
+        guard let image = bitmap?.makeImage() else { return }
         context.interpolationQuality = .none
         context.draw(image, in: bounds.insetBy(dx: 1, dy: 2))
+    }
+
+    private func clear() {
+        memset(pixels, 0, pixelCount)
     }
 
     private func writePixel(column: Int, row: Int, color: SIMD4<Float>, alpha: Float) {
@@ -218,7 +268,7 @@ final class StripVisualizationView: NSView {
     }
 
     private func fillWaveformPixels() {
-        for index in pixels.indices { pixels[index] = 0 }
+        clear()
         let centre = Float(rows - 1) / 2
 
         for column in 0..<columnCount {
@@ -240,21 +290,14 @@ final class StripVisualizationView: NSView {
     }
 
     private func fillOceanPixels() {
-        for index in pixels.indices { pixels[index] = 0 }
+        clear()
 
-        var heights = [Float](repeating: 0, count: columnCount)
         for column in 0..<columnCount {
-            var total: Float = 0
-            var weightSum: Float = 0
-            for tap in -3...3 {
-                let source = (writeIndex + column + tap + columnCount * 2) % columnCount
-                let weight = exp(-Float(tap * tap) / 6)
-                let envelope = envelopes[source]
-                total += max(abs(envelope.x), abs(envelope.y)) * weight
-                weightSum += weight
-            }
-            heights[column] = min(1, total / weightSum * gain)
+            let envelope = envelopes[column]
+            magnitudes[column] = max(abs(envelope.x), abs(envelope.y))
         }
+        EnvelopeSmoother(smoothing: smoothing, width: columnCount)
+            .smooth(magnitudes, startIndex: writeIndex, gain: gain, into: &heights)
 
         for column in 0..<columnCount {
             let crest = heights[column] * Float(rows)
@@ -277,7 +320,7 @@ final class StripVisualizationView: NSView {
     }
 
     private func fillBarsPixels() {
-        for index in pixels.indices { pixels[index] = 0 }
+        clear()
 
         let slots = max(4, min(barCount, columnCount / 2))
         let slotWidth = Float(columnCount) / Float(slots)
@@ -317,7 +360,7 @@ final class StripVisualizationView: NSView {
     }
 
     private func fillStereoPixels() {
-        for index in pixels.indices { pixels[index] = 0 }
+        clear()
         let centre = Float(rows - 1) / 2
 
         for column in 0..<columnCount {
@@ -342,7 +385,7 @@ final class StripVisualizationView: NSView {
     }
 
     private func fillMorphPixels() {
-        for index in pixels.indices { pixels[index] = 0 }
+        clear()
         let centre = Float(rows - 1) / 2
         let hot = lookup[217]
         let cool = lookup[128]

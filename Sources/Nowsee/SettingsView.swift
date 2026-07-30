@@ -7,6 +7,8 @@ struct LivePreview: NSViewRepresentable {
     let fade: CGFloat
     let opacity: CGFloat
     let showsIdleIndicator: Bool
+    var backgroundOpacity: CGFloat = 0
+    var cornerRadius: CGFloat = 0
 
     func makeNSView(context: Context) -> StripVisualizationView {
         let view = StripVisualizationView(width: width, height: height)
@@ -20,6 +22,8 @@ struct LivePreview: NSViewRepresentable {
         view.resize(width: width, height: height)
         view.fadeWidth = fade
         view.opacity = opacity
+        view.backgroundOpacity = backgroundOpacity
+        view.cornerRadius = cornerRadius
         view.mode = NowseeSettings.shared.visualization
         view.apply(palette: NowseeSettings.shared.palette)
     }
@@ -63,11 +67,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Preview").font(.headline)
             LivePreview(
-                width: 416, height: 96, fade: 0, opacity: 1, showsIdleIndicator: false
+                width: 416, height: 96, fade: 0, opacity: 1, showsIdleIndicator: false,
+                backgroundOpacity: settings.windowOpacity, cornerRadius: 6
             )
             .frame(height: 96)
-            .background(Color.black.opacity(settings.windowOpacity))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             Text("Menu bar").font(.subheadline).foregroundStyle(.secondary)
             LivePreview(
@@ -78,6 +81,15 @@ struct SettingsView: View {
                 showsIdleIndicator: true
             )
             .frame(width: settings.barWidth, height: 22)
+
+            Toggle("Animate the preview when nothing is playing", isOn: $settings.mockPreview)
+                .padding(.top, 4)
+            Text(
+                "Draws a synthetic signal so palettes and shapes stay adjustable in a quiet room. "
+                    + "Nothing is played; real audio takes over the moment it arrives."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -117,12 +129,9 @@ struct SettingsView: View {
                 slider(
                     "Smoothing", value: $settings.smoothing, range: 0...1,
                     display: "\(Int(settings.smoothing * 100))%")
-                Text(
-                    "Blends neighbouring frequency bands and slows the rise and fall, so the shape "
-                        + "flows instead of stepping between bands."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text(smoothingDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -159,6 +168,13 @@ struct SettingsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+    }
+
+    private var smoothingDetail: String {
+        settings.visualization == .ocean
+            ? "Widens the blur along the swell, so the surface rolls instead of spiking."
+            : "Blends neighbouring frequency bands and slows the rise and fall, so the shape "
+                + "flows instead of stepping between bands."
     }
 
     private func paletteRow(_ option: Palette) -> some View {
