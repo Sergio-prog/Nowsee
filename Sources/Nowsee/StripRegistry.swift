@@ -48,6 +48,6 @@ final class StripRegistry {
         strip.mode = settings.visualization
         strip.apply(palette: settings.palette)
         strip.gain = Float(settings.waveformGain)
-        strip.redrawInterval = 1.0 / Double(min(settings.frameRate, 20))
+        strip.redrawInterval = 1.0 / Double(settings.frameRate)
     }
 }

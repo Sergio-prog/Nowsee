@@ -59,7 +59,13 @@ extension Notification.Name {
 final class NowseeSettings {
     static let shared = NowseeSettings()
 
-    static let frameRateOptions = [15, 30, 60, 120]
+    static var displayRefreshRate: Int {
+        max(30, NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 60)
+    }
+
+    static var frameRateOptions: [Int] {
+        [15, 30, 60, 120].filter { $0 <= displayRefreshRate }
+    }
 
     var visualization: Visualization { didSet { save(visualization.rawValue, "visualization") } }
     var paletteName: String { didSet { save(paletteName, "palette") } }
@@ -70,9 +76,17 @@ final class NowseeSettings {
     var barFade: Double { didSet { save(barFade, "barFade") } }
     var barOpacity: Double { didSet { save(barOpacity, "barOpacity") } }
     var waveformGain: Double { didSet { save(waveformGain, "waveformGain") } }
+    var customLow: SIMD3<Float> { didSet { saveColor(customLow, "customLow") } }
+    var customMid: SIMD3<Float> { didSet { saveColor(customMid, "customMid") } }
+    var customHigh: SIMD3<Float> { didSet { saveColor(customHigh, "customHigh") } }
+
+    var customPalette: Palette {
+        .custom(low: customLow, mid: customMid, high: customHigh)
+    }
 
     var palette: Palette {
-        Palette.all.first { $0.name == paletteName } ?? .magma
+        if paletteName == Palette.customName { return customPalette }
+        return Palette.builtIn.first { $0.name == paletteName } ?? .magma
     }
 
     private var isLoading = true
@@ -84,6 +98,9 @@ final class NowseeSettings {
         paletteName = defaults.string(forKey: "palette") ?? Palette.magma.name
         let storedRate = defaults.integer(forKey: "frameRate")
         frameRate = Self.frameRateOptions.contains(storedRate) ? storedRate : 30
+        customLow = Self.loadColor("customLow", defaults) ?? SIMD3(0.043, 0.055, 0.310)
+        customMid = Self.loadColor("customMid", defaults) ?? SIMD3(0.180, 0.800, 0.451)
+        customHigh = Self.loadColor("customHigh", defaults) ?? SIMD3(0.976, 0.980, 0.945)
         alwaysOnTop = defaults.object(forKey: "alwaysOnTop") as? Bool ?? false
         windowOpacity = defaults.object(forKey: "windowOpacity") as? Double ?? 1.0
         barWidth = defaults.object(forKey: "barWidth") as? Double ?? 72
@@ -97,5 +114,16 @@ final class NowseeSettings {
         guard !isLoading else { return }
         UserDefaults.standard.set(value, forKey: key)
         NotificationCenter.default.post(name: .nowseeSettingsChanged, object: nil)
+    }
+
+    private func saveColor(_ color: SIMD3<Float>, _ key: String) {
+        save([color.x, color.y, color.z], key)
+    }
+
+    private static func loadColor(_ key: String, _ defaults: UserDefaults) -> SIMD3<Float>? {
+        guard let stored = defaults.array(forKey: key) as? [Double], stored.count == 3 else {
+            return nil
+        }
+        return SIMD3(Float(stored[0]), Float(stored[1]), Float(stored[2]))
     }
 }

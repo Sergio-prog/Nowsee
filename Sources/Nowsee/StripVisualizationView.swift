@@ -154,16 +154,13 @@ final class StripVisualizationView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        switch state {
-        case .paused:
+        if state == .paused {
             if showsIdleIndicator { drawPausedGlyph(in: context) }
             return
-        case .idle:
-            if showsIdleIndicator { drawIdleLine(in: context) }
-            return
-        case .active:
-            break
         }
+
+        if showsIdleIndicator { drawBaseline(in: context) }
+        guard state == .active else { return }
 
         switch mode {
         case .spectrogram: fillSpectrogramPixels()
@@ -354,10 +351,18 @@ final class StripVisualizationView: NSView {
         }
     }
 
-    private func drawIdleLine(in context: CGContext) {
+    private var baselineFraction: CGFloat {
+        switch mode {
+        case .spectrogram, .ocean: return 1
+        case .waveform, .stereo, .morph: return 0.5
+        }
+    }
+
+    private func drawBaseline(in context: CGContext) {
         let area = bounds.insetBy(dx: 1, dy: 2)
+        let position = area.minY + (area.height - 1) * baselineFraction
         context.setFillColor(NSColor.tertiaryLabelColor.cgColor)
-        context.fill(CGRect(x: area.minX, y: area.midY - 0.5, width: area.width, height: 1))
+        context.fill(CGRect(x: area.minX, y: position, width: area.width, height: 1))
     }
 
     private func drawPausedGlyph(in context: CGContext) {

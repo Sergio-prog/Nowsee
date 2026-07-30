@@ -29,9 +29,10 @@ the shape morphs in place, the way an FL Studio visualizer does.
 Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
 releases the audio tap. Verified capturing Spotify playback.
 
-The menu bar strip has three states: the scrolling spectrogram while audio plays, a thin flat line
-when nothing has been heard for 1.5 s, and a pause glyph when capture is off — so the app is always
-visibly present rather than an empty transparent gap.
+The menu bar strip always draws a baseline, so the app is visibly present rather than an empty
+transparent gap. Where that line sits depends on the mode — centred for Waveform, Stereo and Morph,
+along the bottom for Spectrogram and Ocean — so it reads as the axis the visualization grows from
+rather than as a separate idle graphic. When capture is paused it becomes a pause glyph instead.
 
 ## Stack
 
@@ -88,8 +89,9 @@ menu bar strip. Everything persists in `UserDefaults`.
 |---|---|---|
 | Visualization | Spectrogram, Waveform, Ocean, Stereo, Morph | Spectrogram |
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
-| Palette | Magma, Inferno, Viridis, Classic | Magma |
-| Frame rate | 15 / 30 / 60 / 120 fps | 30 |
+| Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
+| Custom colours | low / mid / high stops, any colour | blue → green → white |
+| Frame rate | 15 / 30 / 60, capped to the display refresh rate | 30 |
 | Float above all windows | on / off | off |
 | Window background opacity | 0–100% | 100% |
 | Menu bar width | 40–220 pt | 72 pt |
@@ -208,8 +210,15 @@ Command Line Tools installed, so the shader lives in a Swift string and there is
 build step.
 
 **Decouple the menu bar redraw from the hop rate.** Columns arrive ~94/sec; a 72×22 pt strip does not
-need that. It coalesces to 20 fps and reuses one pixel buffer. The Metal view also pauses when its
-window is closed or minimised.
+need that. It coalesces to the chosen frame rate and reuses one pixel buffer. The Metal view also
+pauses when its window is closed or minimised.
+
+**A frame rate setting that cannot be reached is worse than no setting.** The picker offered 120 fps
+on a 60 Hz panel, so 60 and 120 rendered identically and the control felt broken. Worse, the menu bar
+strip was separately clamped to 20 fps, so for anyone watching only the strip the setting did nothing
+at all. Options are now filtered by `NSScreen.maximumFramesPerSecond`, the caption names the display's
+rate, and the strip follows the setting. Measured cost of un-clamping the strip: 7.5% CPU at 30 fps
+versus 9.4% at 60.
 
 **Idling properly is what makes it an always-on app.** Rendering an unchanging image at 30 fps and
 running 94 FFTs/sec on digital silence costs ~8% CPU for nothing. Two fixes take idle to ~0.2%:

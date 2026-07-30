@@ -106,16 +106,22 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Palette").font(.subheadline)
                 ForEach(Palette.all, id: \.name) { option in
-                    HStack {
-                        Image(systemName: settings.paletteName == option.name ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(settings.paletteName == option.name ? Color.accentColor : .secondary)
-                        Text(option.name).frame(width: 70, alignment: .leading)
-                        PaletteSwatch(palette: option)
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { settings.paletteName = option.name }
+                    paletteRow(option)
                 }
+            }
+
+            if settings.paletteName == Palette.customName {
+                HStack(spacing: 16) {
+                    ColorPicker("Low", selection: customBinding(\.customLow), supportsOpacity: false)
+                    ColorPicker("Mid", selection: customBinding(\.customMid), supportsOpacity: false)
+                    ColorPicker("High", selection: customBinding(\.customHigh), supportsOpacity: false)
+                }
+                .labelsHidden()
+                .overlay(alignment: .leading) {
+                    Text("Low · Mid · High").font(.caption).foregroundStyle(.secondary)
+                        .offset(y: 20)
+                }
+                .padding(.bottom, 14)
             }
 
             Picker("Frame rate", selection: $settings.frameRate) {
@@ -123,7 +129,44 @@ struct SettingsView: View {
                     Text("\(rate) fps").tag(rate)
                 }
             }
+
+            Text(
+                "This display refreshes at \(NowseeSettings.displayRefreshRate) Hz, so rates above "
+                    + "that are not offered — they would look identical."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
+    }
+
+    private func paletteRow(_ option: Palette) -> some View {
+        let isSelected = settings.paletteName == option.name
+        return HStack {
+            Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            Text(option.name).frame(width: 70, alignment: .leading)
+            PaletteSwatch(palette: option)
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { settings.paletteName = option.name }
+    }
+
+    private func customBinding(_ path: ReferenceWritableKeyPath<NowseeSettings, SIMD3<Float>>)
+        -> Binding<Color>
+    {
+        Binding(
+            get: {
+                let value = settings[keyPath: path]
+                return Color(red: Double(value.x), green: Double(value.y), blue: Double(value.z))
+            },
+            set: { newValue in
+                guard let components = NSColor(newValue).usingColorSpace(.sRGB) else { return }
+                settings[keyPath: path] = SIMD3(
+                    Float(components.redComponent), Float(components.greenComponent),
+                    Float(components.blueComponent))
+            }
+        )
     }
 
     private var windowSection: some View {
