@@ -16,6 +16,7 @@ final class StripVisualizationView: NSView {
     var mode: Visualization = .spectrogram { didSet { needsDisplay = true } }
     var fadeWidth: CGFloat = 6 { didSet { needsDisplay = true } }
     var opacity: CGFloat = 1 { didSet { needsDisplay = true } }
+    var gain: Float = 4 { didSet { needsDisplay = true } }
     var showsIdleIndicator = true
 
     private var rows: Int
@@ -104,7 +105,7 @@ final class StripVisualizationView: NSView {
     }
 
     func append(low: Float, high: Float) {
-        guard !isPaused, mode == .waveform else { return }
+        guard !isPaused, mode.usesEnvelope else { return }
         if max(abs(low), abs(high)) > 0.002 {
             lastSignal = CACurrentMediaTime()
         }
@@ -137,6 +138,7 @@ final class StripVisualizationView: NSView {
         switch mode {
         case .spectrogram: fillSpectrogramPixels()
         case .waveform: fillWaveformPixels()
+        case .ocean: fillOceanPixels()
         }
         applyEdgeFade()
 
@@ -186,18 +188,51 @@ final class StripVisualizationView: NSView {
 
         for column in 0..<columnCount {
             let source = (writeIndex + column) % columnCount
-            let envelope = envelopes[source]
+            let envelope = envelopes[source] * gain
             let amplitude = min(1, max(abs(envelope.x), abs(envelope.y)))
             let color = lookup[max(0, min(255, Int(amplitude * 255)))]
 
-            let top = centre - max(0, envelope.y) * centre
-            let bottom = centre - min(0, envelope.x) * centre
+            let top = centre - min(1, max(0, envelope.y)) * centre
+            let bottom = centre - max(-1, min(0, envelope.x)) * centre
             let first = max(0, Int(top.rounded(.down)))
             let last = min(rows - 1, Int(bottom.rounded(.up)))
             guard first <= last else { continue }
 
             for row in first...last {
                 writePixel(column: column, row: row, color: color, alpha: max(0.35, amplitude))
+            }
+        }
+    }
+
+    private func fillOceanPixels() {
+        for index in pixels.indices { pixels[index] = 0 }
+
+        var heights = [Float](repeating: 0, count: columnCount)
+        for column in 0..<columnCount {
+            var total: Float = 0
+            var weightSum: Float = 0
+            for tap in -3...3 {
+                let source = (writeIndex + column + tap + columnCount * 2) % columnCount
+                let weight = exp(-Float(tap * tap) / 6)
+                let envelope = envelopes[source]
+                total += max(abs(envelope.x), abs(envelope.y)) * weight
+                weightSum += weight
+            }
+            heights[column] = min(1, total / weightSum * gain)
+        }
+
+        for column in 0..<columnCount {
+            let crest = heights[column] * Float(rows)
+            guard crest > 0 else { continue }
+            let top = rows - 1 - Int(crest.rounded(.down))
+            for row in max(0, top)..<rows {
+                let depth = Float(rows - 1 - row) / max(crest, 0.001)
+                let shade = min(0.95, 0.18 + depth * 0.77)
+                let color = lookup[max(0, min(255, Int(shade * 255)))]
+                let isCrest = row == max(0, top)
+                writePixel(
+                    column: column, row: rows - 1 - row, color: color,
+                    alpha: isCrest ? 1 : max(0.45, heights[column]))
             }
         }
     }

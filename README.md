@@ -12,8 +12,10 @@ which renders spectrograms from audio *files* — Nowsee does it continuously, i
 | P2 — Metal spectrogram + window | **working** |
 | P3 — menu bar strip | **working** |
 
-Live spectrogram of system audio, in a window and in the menu bar. Four palettes, selectable frame
-rate, and a pause toggle that fully releases the audio tap. Verified capturing Spotify playback.
+Live visualization of system audio, in a window and in the menu bar. Three modes — a scrolling
+spectrogram, a centred waveform, and Ocean, a filled wave that rises from the bottom edge with a lit
+crest. Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
+releases the audio tap. Verified capturing Spotify playback.
 
 The menu bar strip has three states: the scrolling spectrogram while audio plays, a thin flat line
 when nothing has been heard for 1.5 s, and a pause glyph when capture is off — so the app is always
@@ -60,7 +62,8 @@ menu bar strip. Everything persists in `UserDefaults`.
 
 | Setting | Options | Default |
 |---|---|---|
-| Visualization | Spectrogram, Waveform | Spectrogram |
+| Visualization | Spectrogram, Waveform, Ocean | Spectrogram |
+| Sensitivity | 1–30× (envelope modes only) | 4× |
 | Palette | Magma, Inferno, Viridis, Classic | Magma |
 | Frame rate | 15 / 30 / 60 / 120 fps | 30 |
 | Float above all windows | on / off | off |

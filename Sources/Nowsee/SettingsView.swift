@@ -91,9 +91,21 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
 
-            Text("Waveform is considerably cheaper — an envelope reduction with no FFT.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                "Waveform and Ocean skip the FFT entirely — they reduce the signal to a min/max "
+                    + "envelope, so they cost less than the spectrogram."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if settings.visualization.usesEnvelope {
+                slider(
+                    "Sensitivity", value: $settings.waveformGain, range: 1...30,
+                    display: String(format: "%.1f×", settings.waveformGain))
+                Text("Most music peaks well below full scale, so a gain above 1 is usually needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Palette").font(.subheadline)

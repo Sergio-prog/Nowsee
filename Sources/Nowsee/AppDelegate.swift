@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         renderer?.mode = settings.visualization
         renderer?.apply(palette: settings.palette)
         renderer?.background = SIMD4(0, 0, 0, Float(settings.windowOpacity))
+        renderer?.gain = Float(settings.waveformGain)
 
         metalView?.preferredFramesPerSecond = settings.frameRate
         metalView?.layer?.isOpaque = settings.windowOpacity >= 1

@@ -58,11 +58,10 @@ final class AudioEngine {
         source.schedule(deadline: .now(), repeating: .milliseconds(16))
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            switch self.visualization {
-            case .spectrogram:
-                self.spectrum?.drainColumns { self.onColumn?($0) }
-            case .waveform:
+            if self.visualization.usesEnvelope {
                 self.waveform?.drainEnvelopes { self.onEnvelope?($0, $1) }
+            } else {
+                self.spectrum?.drainColumns { self.onColumn?($0) }
             }
         }
         source.resume()

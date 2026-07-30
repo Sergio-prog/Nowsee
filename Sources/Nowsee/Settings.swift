@@ -4,6 +4,7 @@ import Foundation
 enum Visualization: String, CaseIterable, Identifiable {
     case spectrogram
     case waveform
+    case ocean
 
     var id: String { rawValue }
 
@@ -11,7 +12,12 @@ enum Visualization: String, CaseIterable, Identifiable {
         switch self {
         case .spectrogram: return "Spectrogram"
         case .waveform: return "Waveform"
+        case .ocean: return "Ocean"
         }
+    }
+
+    var usesEnvelope: Bool {
+        self != .spectrogram
     }
 }
 
@@ -33,6 +39,7 @@ final class NowseeSettings {
     var barWidth: Double { didSet { save(barWidth, "barWidth") } }
     var barFade: Double { didSet { save(barFade, "barFade") } }
     var barOpacity: Double { didSet { save(barOpacity, "barOpacity") } }
+    var waveformGain: Double { didSet { save(waveformGain, "waveformGain") } }
 
     var palette: Palette {
         Palette.all.first { $0.name == paletteName } ?? .magma
@@ -52,6 +59,7 @@ final class NowseeSettings {
         barWidth = defaults.object(forKey: "barWidth") as? Double ?? 72
         barFade = defaults.object(forKey: "barFade") as? Double ?? 6
         barOpacity = defaults.object(forKey: "barOpacity") as? Double ?? 1.0
+        waveformGain = defaults.object(forKey: "waveformGain") as? Double ?? 4.0
         isLoading = false
     }
 

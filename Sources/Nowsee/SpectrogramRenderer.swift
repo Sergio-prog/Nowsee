@@ -36,11 +36,12 @@ fragment float4 fragmentWaveform(VertexOut in [[stage_in]],
                                  texture2d<float> envelope [[texture(0)]],
                                  texture2d<float> palette [[texture(1)]],
                                  constant float &writeOffset [[buffer(0)]],
-                                 constant float4 &background [[buffer(1)]]) {
+                                 constant float4 &background [[buffer(1)]],
+                                 constant float &gain [[buffer(2)]]) {
     constexpr sampler wrapSampler(filter::linear, address::repeat);
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
     float u = fract(in.uv.x + writeOffset);
-    float2 bounds = envelope.sample(wrapSampler, float2(u, 0.5)).rg;
+    float2 bounds = clamp(envelope.sample(wrapSampler, float2(u, 0.5)).rg * gain, -1.0, 1.0);
 
     float y = in.uv.y * 2.0 - 1.0;
     float amplitude = clamp(max(abs(bounds.r), abs(bounds.g)), 0.0, 1.0);
@@ -53,6 +54,40 @@ fragment float4 fragmentWaveform(VertexOut in [[stage_in]],
     float coverage = clamp(inside + glow, 0.0, 1.0);
     return float4(mix(background.rgb, color, coverage), background.a + (1.0 - background.a) * coverage);
 }
+
+fragment float4 fragmentOcean(VertexOut in [[stage_in]],
+                              texture2d<float> envelope [[texture(0)]],
+                              texture2d<float> palette [[texture(1)]],
+                              constant float &writeOffset [[buffer(0)]],
+                              constant float4 &background [[buffer(1)]],
+                              constant float &gain [[buffer(2)]]) {
+    constexpr sampler wrapSampler(filter::linear, address::repeat);
+    constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
+
+    float width = float(envelope.get_width());
+    float u = fract(in.uv.x + writeOffset);
+
+    float crestHeight = 0.0;
+    float weightSum = 0.0;
+    for (int tap = -4; tap <= 4; ++tap) {
+        float weight = exp(-float(tap * tap) / 8.0);
+        float2 bounds = envelope.sample(wrapSampler, float2(fract(u + float(tap) / width), 0.5)).rg;
+        crestHeight += max(abs(bounds.r), abs(bounds.g)) * weight;
+        weightSum += weight;
+    }
+    crestHeight = clamp(crestHeight / weightSum * gain, 0.0, 1.0);
+
+    float y = in.uv.y;
+    float edge = fwidth(y) * 1.5 + 0.003;
+    float body = 1.0 - smoothstep(crestHeight - edge, crestHeight + edge, y);
+    float depth = crestHeight > 0.001 ? clamp(y / crestHeight, 0.0, 1.0) : 0.0;
+
+    float3 color = palette.sample(clampSampler, float2(mix(0.18, 0.95, depth), 0.5)).rgb;
+    float crest = exp(-pow((y - crestHeight) / (edge * 5.0), 2.0)) * 0.7;
+    float coverage = clamp(body + crest, 0.0, 1.0);
+    float3 lit = mix(color, float3(1.0), crest * 0.35);
+    return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
+}
 """
 
 final class SpectrogramRenderer: NSObject, MTKViewDelegate {
@@ -60,6 +95,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let spectrogramPipeline: MTLRenderPipelineState
     private let waveformPipeline: MTLRenderPipelineState
+    private let oceanPipeline: MTLRenderPipelineState
     private let spectrogram: MTLTexture
     private let envelope: MTLTexture
     private var palette: MTLTexture
@@ -70,6 +106,7 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
 
     var mode: Visualization = .spectrogram
     var background = SIMD4<Float>(0, 0, 0, 1)
+    var gain: Float = 4
 
     private(set) var columnsAppended = 0
     private(set) var framesDrawn = 0
@@ -105,6 +142,9 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
 
             descriptor.fragmentFunction = library.makeFunction(name: "fragmentWaveform")
             waveformPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+
+            descriptor.fragmentFunction = library.makeFunction(name: "fragmentOcean")
+            oceanPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
             NSLog("Nowsee: Metal pipeline failed — \(error)")
             return nil
@@ -204,15 +244,21 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
             let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor)
         else { return }
 
-        let isWaveform = mode == .waveform
-        encoder.setRenderPipelineState(isWaveform ? waveformPipeline : spectrogramPipeline)
-        encoder.setFragmentTexture(isWaveform ? envelope : spectrogram, index: 0)
+        let usesEnvelope = mode.usesEnvelope
+        switch mode {
+        case .spectrogram: encoder.setRenderPipelineState(spectrogramPipeline)
+        case .waveform: encoder.setRenderPipelineState(waveformPipeline)
+        case .ocean: encoder.setRenderPipelineState(oceanPipeline)
+        }
+        encoder.setFragmentTexture(usesEnvelope ? envelope : spectrogram, index: 0)
         encoder.setFragmentTexture(palette, index: 1)
-        var offset = Float(isWaveform ? envelopeIndex : writeIndex) / Float(columnCapacity)
+        var offset = Float(usesEnvelope ? envelopeIndex : writeIndex) / Float(columnCapacity)
         encoder.setFragmentBytes(&offset, length: MemoryLayout<Float>.size, index: 0)
         var backgroundColor = background
         encoder.setFragmentBytes(
             &backgroundColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
+        var gainValue = gain
+        encoder.setFragmentBytes(&gainValue, length: MemoryLayout<Float>.size, index: 2)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         buffer.present(drawable)
