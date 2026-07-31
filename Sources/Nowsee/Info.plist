@@ -6,6 +6,8 @@
 	<string>sh.nowsee.Nowsee</string>
 	<key>CFBundleName</key>
 	<string>Nowsee</string>
+	<key>CFBundleIconFile</key>
+	<string>Nowsee</string>
 	<key>CFBundleExecutable</key>
 	<string>Nowsee</string>
 	<key>CFBundleShortVersionString</key>

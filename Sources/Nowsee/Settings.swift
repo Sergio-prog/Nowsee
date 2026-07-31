@@ -50,6 +50,13 @@ enum Visualization: String, CaseIterable, Identifiable {
         }
     }
 
+    var baselineAtBottom: Bool {
+        switch self {
+        case .spectrogram, .ocean, .bars: return true
+        case .waveform, .stereo, .morph: return false
+        }
+    }
+
     var usesSmoothing: Bool {
         source == .stereoSpectrum || self == .ocean
     }
@@ -57,6 +64,37 @@ enum Visualization: String, CaseIterable, Identifiable {
     var usesGain: Bool {
         source != .spectrum
     }
+}
+
+enum StandbyAnimation: String, CaseIterable, Identifiable {
+    case off
+    case breathe
+    case wave
+    case sweep
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: return "Off"
+        case .breathe: return "Breathe"
+        case .wave: return "Wave"
+        case .sweep: return "Sweep"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .off: return "The baseline holds still, and the window stops rendering entirely."
+        case .breathe: return "The baseline fades slowly in and out."
+        case .wave: return "A slow swell travels along the baseline."
+        case .sweep: return "A soft highlight drifts from one end to the other."
+        }
+    }
+
+    var animates: Bool { self != .off }
+
+    var redrawsPerFrame: Bool { self == .wave || self == .sweep }
 }
 
 extension Notification.Name {
@@ -88,9 +126,20 @@ final class NowseeSettings {
     var equalizerBarCount: Double { didSet { save(equalizerBarCount, "equalizerBarCount") } }
     var equalizerBarGap: Double { didSet { save(equalizerBarGap, "equalizerBarGap") } }
     var mockPreview: Bool { didSet { save(mockPreview, "mockPreview") } }
+    var standby: StandbyAnimation { didSet { save(standby.rawValue, "standby") } }
+    var standbyIntensity: Double { didSet { save(standbyIntensity, "standbyIntensity") } }
+    var baselineMatchesSystem: Bool { didSet { save(baselineMatchesSystem, "baselineMatchesSystem") } }
+    var baselineColor: SIMD3<Float> { didSet { saveColor(baselineColor, "baselineColor") } }
+    var baselineOpacity: Double { didSet { save(baselineOpacity, "baselineOpacity") } }
     var customLow: SIMD3<Float> { didSet { saveColor(customLow, "customLow") } }
     var customMid: SIMD3<Float> { didSet { saveColor(customMid, "customMid") } }
     var customHigh: SIMD3<Float> { didSet { saveColor(customHigh, "customHigh") } }
+
+    var baselineNSColor: NSColor {
+        NSColor(
+            srgbRed: CGFloat(baselineColor.x), green: CGFloat(baselineColor.y),
+            blue: CGFloat(baselineColor.z), alpha: 1)
+    }
 
     var customPalette: Palette {
         .custom(low: customLow, mid: customMid, high: customHigh)
@@ -123,6 +172,11 @@ final class NowseeSettings {
         equalizerBarCount = defaults.object(forKey: "equalizerBarCount") as? Double ?? 56
         equalizerBarGap = defaults.object(forKey: "equalizerBarGap") as? Double ?? 0.16
         mockPreview = defaults.object(forKey: "mockPreview") as? Bool ?? true
+        standby = StandbyAnimation(rawValue: defaults.string(forKey: "standby") ?? "") ?? .breathe
+        standbyIntensity = defaults.object(forKey: "standbyIntensity") as? Double ?? 0.6
+        baselineMatchesSystem = defaults.object(forKey: "baselineMatchesSystem") as? Bool ?? true
+        baselineColor = Self.loadColor("baselineColor", defaults) ?? SIMD3(1, 1, 1)
+        baselineOpacity = defaults.object(forKey: "baselineOpacity") as? Double ?? 1.0
         isLoading = false
     }
 

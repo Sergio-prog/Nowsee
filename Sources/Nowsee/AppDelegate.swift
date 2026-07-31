@@ -52,7 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, let renderer = self.renderer, !self.isPaused else { return }
-            if renderer.hasScrolledToSilence, self.metalView?.isPaused == false {
+            if renderer.hasScrolledToSilence, !self.settings.standby.animates,
+                self.metalView?.isPaused == false
+            {
                 self.metalView?.isPaused = true
             }
         }
@@ -159,9 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        view.isPaused = true
         self.window = window
-
-        showWindow()
     }
 
     @objc private func settingsChanged() {
@@ -179,6 +180,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         renderer?.shape = SIMD4(
             Float(settings.equalizerBarCount), Float(settings.equalizerBarGap),
             Float(settings.smoothing), 0)
+        renderer?.standbyStyle = StandbyAnimation.allCases.firstIndex(of: settings.standby) ?? 0
+        renderer?.standbyIntensity = Float(settings.standbyIntensity)
+        renderer?.standbyTint = baselineTintForWindow()
+        if settings.standby.animates, window?.isVisible == true {
+            metalView?.isPaused = false
+        }
 
         metalView?.preferredFramesPerSecond = settings.frameRate
         metalView?.layer?.isOpaque = settings.windowOpacity >= 1
@@ -195,6 +202,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         StripRegistry.shared.applySettings()
         PreviewSignal.shared.applySettings()
+    }
+
+    private func baselineTintForWindow() -> SIMD4<Float> {
+        let color =
+            settings.baselineMatchesSystem
+            ? NSColor.tertiaryLabelColor.withAlphaComponent(1) : settings.baselineNSColor
+        let resolved = color.usingColorSpace(.sRGB) ?? .white
+        let alpha = settings.baselineMatchesSystem ? 0.26 : 1.0
+        return SIMD4(
+            Float(resolved.redComponent), Float(resolved.greenComponent),
+            Float(resolved.blueComponent), Float(alpha * settings.baselineOpacity))
     }
 
     @objc private func showWindow() {

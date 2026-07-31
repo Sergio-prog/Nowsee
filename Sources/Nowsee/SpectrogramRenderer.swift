@@ -19,17 +19,52 @@ vertex VertexOut vertexMain(uint vertexID [[vertex_id]]) {
     return out;
 }
 
+static float4 blendStandby(float4 base, float2 uv, float4 standby, float4 tint) {
+    int style = int(standby.x);
+    if (style == 0 || tint.a <= 0.0) return base;
+
+    float strength = standby.y;
+    float phase = standby.z;
+    float anchor = standby.w;
+
+    float offset = 0.0;
+    float scale = 1.0;
+
+    if (style == 1) {
+        float pulse = 0.5 + 0.5 * sin(phase * 1.1);
+        scale = 1.0 - strength + strength * (0.18 + 0.82 * pulse);
+    } else if (style == 2) {
+        float taper = sin(uv.x * M_PI_F);
+        offset = strength * 0.16 * taper * sin(uv.x * M_PI_F * 5.0 + phase * 1.2);
+    } else {
+        float head = fract(phase * 0.22);
+        float gap = abs(uv.x - head);
+        gap = min(gap, 1.0 - gap);
+        scale = 0.22 + 0.78 * exp(-pow(gap / 0.12, 2.0)) * strength;
+    }
+
+    float centre = clamp(anchor + offset, 0.01, 0.99);
+    float thickness = fwidth(uv.y) * 1.2 + 0.003;
+    float line = 1.0 - smoothstep(0.0, thickness, abs(uv.y - centre));
+    float coverage = clamp(line * tint.a * scale, 0.0, 1.0);
+    return float4(mix(base.rgb, tint.rgb, coverage), max(base.a, coverage));
+}
+
 fragment float4 fragmentMain(VertexOut in [[stage_in]],
                              texture2d<float> spectrogram [[texture(0)]],
                              texture2d<float> palette [[texture(1)]],
                              constant float &writeOffset [[buffer(0)]],
-                             constant float4 &background [[buffer(1)]]) {
+                             constant float4 &background [[buffer(1)]],
+                             constant float4 &standby [[buffer(4)]],
+                             constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler wrapSampler(filter::linear, address::repeat);
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
     float u = fract(in.uv.x + writeOffset);
     float intensity = spectrogram.sample(wrapSampler, float2(u, in.uv.y)).r;
     float3 color = palette.sample(clampSampler, float2(intensity, 0.5)).rgb;
-    return float4(mix(background.rgb, color, intensity), background.a + (1.0 - background.a) * intensity);
+    return blendStandby(
+        float4(mix(background.rgb, color, intensity), background.a + (1.0 - background.a) * intensity),
+        in.uv, standby, standbyTint);
 }
 
 fragment float4 fragmentWaveform(VertexOut in [[stage_in]],
@@ -37,7 +72,9 @@ fragment float4 fragmentWaveform(VertexOut in [[stage_in]],
                                  texture2d<float> palette [[texture(1)]],
                                  constant float &writeOffset [[buffer(0)]],
                                  constant float4 &background [[buffer(1)]],
-                                 constant float &gain [[buffer(2)]]) {
+                                 constant float &gain [[buffer(2)]],
+                                 constant float4 &standby [[buffer(4)]],
+                                 constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler wrapSampler(filter::linear, address::repeat);
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
     float u = fract(in.uv.x + writeOffset);
@@ -52,7 +89,9 @@ fragment float4 fragmentWaveform(VertexOut in [[stage_in]],
     float3 color = palette.sample(clampSampler, float2(amplitude, 0.5)).rgb;
     float glow = exp(-abs(y) * 6.0) * amplitude * 0.25;
     float coverage = clamp(inside + glow, 0.0, 1.0);
-    return float4(mix(background.rgb, color, coverage), background.a + (1.0 - background.a) * coverage);
+    return blendStandby(
+        float4(mix(background.rgb, color, coverage), background.a + (1.0 - background.a) * coverage),
+        in.uv, standby, standbyTint);
 }
 
 fragment float4 fragmentOcean(VertexOut in [[stage_in]],
@@ -61,7 +100,9 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
                               constant float &writeOffset [[buffer(0)]],
                               constant float4 &background [[buffer(1)]],
                               constant float &gain [[buffer(2)]],
-                              constant float4 &shape [[buffer(3)]]) {
+                              constant float4 &shape [[buffer(3)]],
+                              constant float4 &standby [[buffer(4)]],
+                              constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler wrapSampler(filter::linear, address::repeat);
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
 
@@ -90,7 +131,9 @@ fragment float4 fragmentOcean(VertexOut in [[stage_in]],
     float crest = exp(-pow((y - crestHeight) / (edge * 5.0), 2.0)) * 0.7;
     float coverage = clamp(body + crest, 0.0, 1.0);
     float3 lit = mix(color, float3(1.0), crest * 0.35);
-    return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
+    return blendStandby(
+        float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage),
+        in.uv, standby, standbyTint);
 }
 
 constant float spectrumGain = 0.25;
@@ -124,7 +167,9 @@ fragment float4 fragmentBars(VertexOut in [[stage_in]],
                              constant float &writeOffset [[buffer(0)]],
                              constant float4 &background [[buffer(1)]],
                              constant float &gain [[buffer(2)]],
-                             constant float4 &shape [[buffer(3)]]) {
+                             constant float4 &shape [[buffer(3)]],
+                             constant float4 &standby [[buffer(4)]],
+                             constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
 
     float barCount = shape.x;
@@ -152,7 +197,9 @@ fragment float4 fragmentBars(VertexOut in [[stage_in]],
 
     float coverage = clamp(body + capBand, 0.0, 1.0);
     float3 lit = mix(color, capColor, capBand);
-    return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
+    return blendStandby(
+        float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage),
+        in.uv, standby, standbyTint);
 }
 
 fragment float4 fragmentStereo(VertexOut in [[stage_in]],
@@ -160,7 +207,9 @@ fragment float4 fragmentStereo(VertexOut in [[stage_in]],
                                texture2d<float> palette [[texture(1)]],
                                constant float &writeOffset [[buffer(0)]],
                                constant float4 &background [[buffer(1)]],
-                               constant float &gain [[buffer(2)]]) {
+                               constant float &gain [[buffer(2)]],
+                               constant float4 &standby [[buffer(4)]],
+                               constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
     float2 level = sampleBands(spectrum, clampSampler, in.uv.x, gain).rg;
 
@@ -176,7 +225,9 @@ fragment float4 fragmentStereo(VertexOut in [[stage_in]],
     float axis = exp(-abs(y) / (edge * 2.0)) * 0.4;
     float coverage = clamp(body + axis, 0.0, 1.0);
     float3 lit = mix(color, float3(1.0), axis * 0.4);
-    return float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage);
+    return blendStandby(
+        float4(mix(background.rgb, lit, coverage), background.a + (1.0 - background.a) * coverage),
+        in.uv, standby, standbyTint);
 }
 
 fragment float4 fragmentMorph(VertexOut in [[stage_in]],
@@ -184,7 +235,9 @@ fragment float4 fragmentMorph(VertexOut in [[stage_in]],
                               texture2d<float> palette [[texture(1)]],
                               constant float &writeOffset [[buffer(0)]],
                               constant float4 &background [[buffer(1)]],
-                              constant float &gain [[buffer(2)]]) {
+                              constant float &gain [[buffer(2)]],
+                              constant float4 &standby [[buffer(4)]],
+                              constant float4 &standbyTint [[buffer(5)]]) {
     constexpr sampler clampSampler(filter::linear, address::clamp_to_edge);
     float2 level = sampleBands(spectrum, clampSampler, in.uv.x, gain).rg;
 
@@ -201,7 +254,9 @@ fragment float4 fragmentMorph(VertexOut in [[stage_in]],
 
     float3 color = clamp(cool * (rightLine + rightGlow) + hot * (leftLine + leftGlow), 0.0, 1.0);
     float coverage = clamp(leftLine + rightLine + leftGlow + rightGlow, 0.0, 1.0);
-    return float4(mix(background.rgb, color, coverage), background.a + (1.0 - background.a) * coverage);
+    return blendStandby(
+        float4(mix(background.rgb, color, coverage), background.a + (1.0 - background.a) * coverage),
+        in.uv, standby, standbyTint);
 }
 """
 
@@ -229,6 +284,13 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
     var background = SIMD4<Float>(0, 0, 0, 1)
     var gain: Float = 4
     var shape = SIMD4<Float>(56, 0.16, 0.55, 0)
+    var standbyStyle = 1
+    var standbyIntensity: Float = 0.6
+    var standbyTint = SIMD4<Float>(1, 1, 1, 0.26)
+
+    var isIdle: Bool { CACurrentMediaTime() - lastSignalTime > standbyDelay }
+
+    private let standbyDelay: CFTimeInterval = 1.5
 
     private(set) var columnsAppended = 0
     private(set) var framesDrawn = 0
@@ -402,6 +464,14 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func standbyUniform() -> SIMD4<Float> {
+        guard standbyStyle > 0, isIdle else { return .zero }
+        let amplitude = standbyStyle == 2 ? standbyIntensity * 0.16 : 0
+        let resting: Float = mode.baselineAtBottom ? 0.03 : 0.5
+        let phase = Float(CACurrentMediaTime().truncatingRemainder(dividingBy: 3600))
+        return SIMD4(Float(standbyStyle), standbyIntensity, phase, max(resting, amplitude + 0.02))
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
@@ -440,6 +510,10 @@ final class SpectrogramRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentBytes(&gainValue, length: MemoryLayout<Float>.size, index: 2)
         var shapeValue = shape
         encoder.setFragmentBytes(&shapeValue, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
+        var standbyValue = standbyUniform()
+        encoder.setFragmentBytes(&standbyValue, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
+        var tintValue = standbyTint
+        encoder.setFragmentBytes(&tintValue, length: MemoryLayout<SIMD4<Float>>.stride, index: 5)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         buffer.present(drawable)

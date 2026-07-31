@@ -7,10 +7,12 @@ SIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | 
 
 PROBE_APP := dist/Nowsee Probe.app
 APP := dist/Nowsee.app
+ICONSET := dist/Nowsee.iconset
+ICNS := dist/Nowsee.icns
 
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app check run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
+.PHONY: cert app check icon run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
 
 check:
 	$(SWIFT) run -c $(CONFIG) nowsee-check
@@ -29,11 +31,18 @@ uninstall:
 cert:
 	./scripts/make-cert.sh "$(SIGN_NAME)"
 
-app:
+icon:
+	@mkdir -p dist
+	rm -rf "$(ICONSET)"
+	$(SWIFT) scripts/make-icon.swift "$(ICONSET)"
+	iconutil -c icns "$(ICONSET)" -o "$(ICNS)"
+
+app: icon
 	$(SWIFT) build -c $(CONFIG) --product Nowsee
 	rm -rf "$(APP)"
-	mkdir -p "$(APP)/Contents/MacOS"
+	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp Sources/Nowsee/Info.plist "$(APP)/Contents/Info.plist"
+	cp "$(ICNS)" "$(APP)/Contents/Resources/Nowsee.icns"
 	cp $(BIN_DIR)/Nowsee "$(APP)/Contents/MacOS/Nowsee"
 	codesign --force --deep --sign "$(SIGN_IDENTITY)" "$(APP)"
 	@codesign -dv "$(APP)" 2>&1 | grep -E 'Identifier|Signature' || true

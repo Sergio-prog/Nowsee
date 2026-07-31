@@ -53,6 +53,8 @@ struct SettingsView: View {
                 Divider()
                 visualizationSection
                 Divider()
+                standbySection
+                Divider()
                 windowSection
                 Divider()
                 menuBarSection
@@ -164,6 +166,49 @@ struct SettingsView: View {
             Text(
                 "This display refreshes at \(NowseeSettings.displayRefreshRate) Hz, so rates above "
                     + "that are not offered — they would look identical."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var standbySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Baseline & Standby").font(.headline)
+
+            Picker("When silent", selection: $settings.standby) {
+                ForEach(StandbyAnimation.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            Text(settings.standby.detail).font(.caption).foregroundStyle(.secondary)
+
+            if settings.standby.animates {
+                slider(
+                    "Intensity", value: $settings.standbyIntensity, range: 0...1,
+                    display: "\(Int(settings.standbyIntensity * 100))%")
+            }
+
+            Toggle("Match system appearance", isOn: $settings.baselineMatchesSystem)
+
+            if !settings.baselineMatchesSystem {
+                HStack {
+                    Text("Baseline colour").frame(width: 130, alignment: .leading)
+                    ColorPicker(
+                        "", selection: customBinding(\.baselineColor), supportsOpacity: false
+                    )
+                    .labelsHidden()
+                    Spacer()
+                }
+            }
+
+            slider(
+                "Baseline opacity", value: $settings.baselineOpacity, range: 0...1,
+                display: "\(Int(settings.baselineOpacity * 100))%")
+
+            Text(
+                "The baseline is the resting line the visualization grows from — centred for "
+                    + "Waveform, Stereo and Morph, along the bottom edge for the others."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

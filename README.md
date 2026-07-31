@@ -30,10 +30,15 @@ the shape morphs in place, the way an FL Studio visualizer does.
 Four palettes, selectable frame rate, adjustable sensitivity, and a pause toggle that fully
 releases the audio tap. Verified capturing Spotify playback.
 
+Launching does not open the visualizer window — Nowsee starts as a menu bar strip and nothing else.
+The window is there when you want it, from `Show Visualizer` (⌘S) or by launching the app again.
+
 The menu bar strip always draws a baseline, so the app is visibly present rather than an empty
 transparent gap. Where that line sits depends on the mode — centred for Waveform, Stereo and Morph,
 along the bottom for Spectrogram and Ocean — so it reads as the axis the visualization grows from
-rather than as a separate idle graphic. When capture is paused it becomes a pause glyph instead.
+rather than as a separate idle graphic. When capture is paused it becomes a pause glyph instead. Its colour and opacity are configurable,
+and when nothing is playing it can animate — a slow breath, a travelling wave, or a drifting
+highlight — so the strip reads as idle rather than dead.
 
 ## Stack
 
@@ -56,6 +61,7 @@ Swift only. Everything the app needs is an Apple framework with no cross-languag
 
 ```sh
 make install         # build and install to /Applications, then launch
+make icon            # regenerate the app icon from scripts/make-icon.swift
 make app             # build + sign dist/Nowsee.app (release by default)
 make check           # run the scope DSP checks (no audio needed)
 make run-app         # restart the dist/ build
@@ -99,6 +105,11 @@ cannot. The generator runs only while the settings window is open, and a checkbo
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
 | Smoothing | 0–100% (Bars, Stereo, Morph, Ocean) | 55% |
 | Animate preview when quiet | on / off | on |
+| Standby animation | Off, Breathe, Wave, Sweep | Breathe |
+| Standby intensity | 0–100% | 60% |
+| Baseline matches system | on / off | on |
+| Baseline colour | any colour, when not matching the system | white |
+| Baseline opacity | 0–100% | 100% |
 | Bars | 8–96 (Bars only) | 56 |
 | Bar spacing | 0–60% of each slot (Bars only) | 16% |
 | Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
@@ -341,6 +352,45 @@ The kernel lives in `EnvelopeSmoother` in `NowseeCore` so `make check` can asser
 unchanged. The fragment shader duplicates the formula because it has to, so the constants are named
 in one place and copied deliberately.
 
+**The app icon is generated, not committed.** `scripts/make-icon.swift` draws all ten iconset
+sizes with Core Graphics and `make icon` runs it through `iconutil`, so the repository stays free of
+binary assets and the icon is editable as code like everything else. It is four bars over a magma
+gradient on a dark squircle, with the app's own baseline underneath them — chosen because bars are
+the only motif that still reads at 16 pt.
+
+**A layer-backed view in the menu bar costs 20x.** Adding `wantsLayer = true` to
+`StripVisualizationView` — done for the rounded corners on the settings preview, which needs it —
+silently made the menu bar strip enormously more expensive to animate, because the status item is
+composited into the shared menu bar surface and a layer-backed subview there forces an offscreen
+pass. Standby animation measured 42.5% CPU with the layer and 9.5% without it, for identical
+drawing. `wantsLayer` is now set only by the `cornerRadius` setter, so the preview gets it and the
+menu bar strip never does.
+
+That left frame rate as the only remaining lever, because the drawing itself is trivial — a stroked
+70-point path, or thirty 2 px rects. All animated styles now redraw at 12 fps, which is plenty for
+motion this slow:
+
+| Standby | menu bar redraws | idle CPU |
+|---|---|---|
+| Off | 2/s | 0.8% |
+| Breathe | 11/s | 2.3% |
+| Wave | 11/s | 2.4% |
+| Sweep | 11/s | 2.0% |
+
+Roughly 1.5 points of CPU buys the animation. That is a real always-on cost against the 0.2% idle
+figure above, which is why the control exists and why `Off` is a first-class option rather than a
+disabled state.
+
+**An animation that only runs when idle cannot pause the renderer.** The Metal view pauses once the
+whole visible history has scrolled to silence, which is exactly when standby wants to draw. The idle
+timer now checks the standby setting before pausing, so `Off` keeps the old behaviour — the window
+stops rendering entirely — and any animated style keeps it alive while the window is open. Since the
+window no longer opens at launch, that cost is only paid by someone actively looking at it.
+
+Worth knowing when measuring this: a window covered by another window stops rendering, so opening
+the settings window on top of the visualizer freezes its frame counter. That looked like a standby
+bug for one confusing run and is macOS behaving correctly.
+
 **Verifying a visualizer without playing audio.** Screenshots are unavailable (the shell has no
 Screen Recording permission) and playing test tones is obnoxious. `NOWSEE_SELFTEST=signal` writes a
 synthetic stereo tone directly into the ring buffers, which exercises analyzer, Metal upload, and
@@ -366,6 +416,8 @@ Sources/
   Nowsee/                the app
     AudioEngine          owns the rings, drives the active analyzer
     PreviewSignal        display-link driven mock for the settings previews
+  scripts/
+    make-icon.swift      draws the iconset; make icon runs iconutil over it
     SpectrogramRenderer  Metal, one pipeline per visualization
     StripVisualizationView  Core Graphics strip for menu bar and previews
     SettingsView         SwiftUI settings with live preview

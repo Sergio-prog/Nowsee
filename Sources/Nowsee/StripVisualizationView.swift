@@ -28,12 +28,23 @@ final class StripVisualizationView: NSView {
     var cornerRadius: CGFloat = 0 {
         didSet {
             guard cornerRadius != oldValue else { return }
+            if cornerRadius > 0 { wantsLayer = true }
             layer?.cornerRadius = cornerRadius
             layer?.masksToBounds = cornerRadius > 0
         }
     }
     var showsIdleIndicator = true
     var isPreview = false
+    var baselineTint: NSColor? { didSet { invalidateIfChanged(baselineTint != oldValue) } }
+    var baselineOpacity: CGFloat = 1 { didSet { invalidateIfChanged(baselineOpacity != oldValue) } }
+    var standbyIntensity: CGFloat = 0.6 { didSet { invalidateIfChanged(standbyIntensity != oldValue) } }
+    var standby: StandbyAnimation = .breathe {
+        didSet {
+            guard standby != oldValue else { return }
+            restartHeartbeat()
+            needsDisplay = true
+        }
+    }
 
     private var rows: Int
     private var columnCount: Int
@@ -58,6 +69,7 @@ final class StripVisualizationView: NSView {
     var isActive: Bool { state == .active }
 
     private(set) var drawsCompleted = 0
+    private var idleFramesDrawn = 0
 
     private var state: DisplayState {
         if isPaused { return .paused }
@@ -77,15 +89,38 @@ final class StripVisualizationView: NSView {
         pixels.initialize(repeating: 0, count: pixelCount)
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
-        wantsLayer = true
         makeBitmap()
 
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        restartHeartbeat()
+    }
+
+    private func restartHeartbeat() {
+        heartbeat?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: standbyTick, repeats: true) {
+            [weak self] _ in
             guard let self, self.state != .active else { return }
             self.needsDisplay = true
         }
         RunLoop.main.add(timer, forMode: .common)
         heartbeat = timer
+    }
+
+    private var standbyTick: TimeInterval {
+        standby.animates ? 1.0 / 12 : 0.5
+    }
+
+    private var standbyAmplitude: CGFloat {
+        standby == .wave ? standbyIntensity * min(6, bounds.height * 0.2) : 0
+    }
+
+    private var standbyBand: NSRect {
+        let area = bounds.insetBy(dx: 1, dy: 2)
+        let resting = area.minY + (area.height - 1) * baselineFraction
+        let padding = standbyAmplitude + 2
+        let top = max(area.minY, resting - padding)
+        return NSRect(
+            x: area.minX, y: top, width: area.width,
+            height: min(area.maxY - top, padding * 2 + 1))
     }
 
     required init?(coder: NSCoder) { nil }
@@ -214,6 +249,7 @@ final class StripVisualizationView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         drawsCompleted += 1
+        idleFramesDrawn = state == .idle ? idleFramesDrawn + 1 : 0
 
         if backgroundOpacity > 0 {
             context.setFillColor(CGColor(gray: 0, alpha: backgroundOpacity))
@@ -435,17 +471,81 @@ final class StripVisualizationView: NSView {
     }
 
     private var baselineFraction: CGFloat {
-        switch mode {
-        case .spectrogram, .ocean, .bars: return 1
-        case .waveform, .stereo, .morph: return 0.5
-        }
+        mode.baselineAtBottom ? 1 : 0.5
+    }
+
+    private var baselineCGColor: CGColor {
+        let resolved = (baselineTint ?? .tertiaryLabelColor).cgColor
+        let alpha = resolved.alpha * baselineOpacity
+        return resolved.copy(alpha: max(0, min(1, alpha))) ?? resolved
     }
 
     private func drawBaseline(in context: CGContext) {
         let area = bounds.insetBy(dx: 1, dy: 2)
-        let position = area.minY + (area.height - 1) * baselineFraction
-        context.setFillColor(NSColor.tertiaryLabelColor.cgColor)
-        context.fill(CGRect(x: area.minX, y: position, width: area.width, height: 1))
+        let resting = area.minY + (area.height - 1) * baselineFraction
+        let color = baselineCGColor
+
+        guard standby.animates, state == .idle else {
+            context.setFillColor(color)
+            context.fill(CGRect(x: area.minX, y: resting, width: area.width, height: 1))
+            return
+        }
+        drawStandby(in: context, area: area, resting: resting, color: color)
+    }
+
+    private func drawStandby(
+        in context: CGContext, area: CGRect, resting: CGFloat, color: CGColor
+    ) {
+        let time = CACurrentMediaTime()
+        let strength = max(0, min(1, standbyIntensity))
+
+        switch standby {
+        case .off:
+            break
+
+        case .breathe:
+            let pulse = 0.5 + 0.5 * sin(time * 1.1)
+            let scale = 1 - strength + strength * (0.18 + 0.82 * pulse)
+            let faded = color.copy(alpha: max(0, min(1, color.alpha * scale))) ?? color
+            context.setFillColor(faded)
+            context.fill(CGRect(x: area.minX, y: resting, width: area.width, height: 1))
+
+        case .wave:
+            let amplitude = standbyAmplitude
+            let anchor = min(max(resting, area.minY + amplitude + 1), area.maxY - amplitude - 1)
+            let steps = max(24, Int(area.width))
+            context.setStrokeColor(color)
+            context.setLineWidth(1)
+            context.setLineJoin(.round)
+            context.beginPath()
+            for step in 0...steps {
+                let fraction = CGFloat(step) / CGFloat(steps)
+                let taper = sin(fraction * .pi)
+                let offset = amplitude * taper * sin(fraction * .pi * 5 + time * 1.2)
+                let point = CGPoint(x: area.minX + fraction * area.width, y: anchor + offset)
+                if step == 0 { context.move(to: point) } else { context.addLine(to: point) }
+            }
+            context.strokePath()
+
+        case .sweep:
+            let head = CGFloat((time * 0.22).truncatingRemainder(dividingBy: 1))
+            let segment: CGFloat = 2
+            var offset: CGFloat = 0
+            while offset < area.width {
+                let fraction = (offset + segment / 2) / area.width
+                var distance = abs(fraction - head)
+                distance = min(distance, 1 - distance)
+                let glow = exp(-pow(distance / 0.12, 2))
+                let scale = 0.22 + 0.78 * glow * strength
+                let lit = color.copy(alpha: max(0, min(1, color.alpha * scale))) ?? color
+                context.setFillColor(lit)
+                context.fill(
+                    CGRect(
+                        x: area.minX + offset, y: resting,
+                        width: min(segment, area.width - offset), height: 1))
+                offset += segment
+            }
+        }
     }
 
     private func drawPausedGlyph(in context: CGContext) {

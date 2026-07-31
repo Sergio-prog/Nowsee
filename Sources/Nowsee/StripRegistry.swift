@@ -14,7 +14,8 @@ final class StripRegistry {
         let live = all.filter { !$0.isPreview }
         return "preview=\(previews.filter(\.isActive).count)/\(previews.count) "
             + "previewDraws=\(previews.reduce(0) { $0 + $1.drawsCompleted }) "
-            + "bar=\(live.filter(\.isActive).count)/\(live.count)"
+            + "bar=\(live.filter(\.isActive).count)/\(live.count) "
+            + "barDraws=\(live.reduce(0) { $0 + $1.drawsCompleted })"
     }
 
     func register(_ strip: StripVisualizationView) {
@@ -68,6 +69,10 @@ final class StripRegistry {
         strip.smoothing = Float(settings.smoothing)
         strip.barCount = Int(settings.equalizerBarCount)
         strip.barGap = Float(settings.equalizerBarGap)
+        strip.standby = settings.standby
+        strip.standbyIntensity = CGFloat(settings.standbyIntensity)
+        strip.baselineOpacity = CGFloat(settings.baselineOpacity)
+        strip.baselineTint = settings.baselineMatchesSystem ? nil : settings.baselineNSColor
         strip.redrawInterval = 1.0 / Double(settings.frameRate)
     }
 }
