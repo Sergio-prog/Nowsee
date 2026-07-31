@@ -116,6 +116,7 @@ final class NowseeSettings {
     var visualization: Visualization { didSet { save(visualization.rawValue, "visualization") } }
     var paletteName: String { didSet { save(paletteName, "palette") } }
     var frameRate: Int { didSet { save(frameRate, "frameRate") } }
+    var menuBarFrameRate: Int { didSet { save(menuBarFrameRate, "menuBarFrameRate") } }
     var alwaysOnTop: Bool { didSet { save(alwaysOnTop, "alwaysOnTop") } }
     var windowOpacity: Double { didSet { save(windowOpacity, "windowOpacity") } }
     var barWidth: Double { didSet { save(barWidth, "barWidth") } }
@@ -141,6 +142,8 @@ final class NowseeSettings {
             blue: CGFloat(baselineColor.z), alpha: 1)
     }
 
+    var previewFrameRate: Int { min(menuBarFrameRate, 24) }
+
     var customPalette: Palette {
         .custom(low: customLow, mid: customMid, high: customHigh)
     }
@@ -159,6 +162,8 @@ final class NowseeSettings {
         paletteName = defaults.string(forKey: "palette") ?? Palette.magma.name
         let storedRate = defaults.integer(forKey: "frameRate")
         frameRate = Self.frameRateOptions.contains(storedRate) ? storedRate : 30
+        let storedBarRate = defaults.integer(forKey: "menuBarFrameRate")
+        menuBarFrameRate = Self.frameRateOptions.contains(storedBarRate) ? storedBarRate : 30
         customLow = Self.loadColor("customLow", defaults) ?? SIMD3(0.043, 0.055, 0.310)
         customMid = Self.loadColor("customMid", defaults) ?? SIMD3(0.180, 0.800, 0.451)
         customHigh = Self.loadColor("customHigh", defaults) ?? SIMD3(0.976, 0.980, 0.945)

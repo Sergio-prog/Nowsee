@@ -70,7 +70,7 @@ final class PreviewSignal {
             return
         }
 
-        let interval = 1.0 / Double(max(NowseeSettings.shared.frameRate, 1))
+        let interval = 1.0 / Double(max(NowseeSettings.shared.previewFrameRate, 1))
         let elapsed = now - lastEmit
         guard elapsed >= interval * 0.9 else { return }
         lastEmit = now

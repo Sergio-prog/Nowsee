@@ -74,6 +74,9 @@ make reset-tcc       # revoke the audio permission to re-test the prompt
 every two seconds — Metal state, columns ingested, frames drawn, scope peak, registered strips,
 current device.
 
+`NOWSEE_WINDOW=1600x900` overrides the visualizer window's initial size, which exists for
+measuring how render cost scales with area.
+
 `NOWSEE_SELFTEST` takes a comma-separated list. `signal` feeds a synthetic stereo tone
 (different frequency per channel) straight into the ring buffers, which drives every mode end to end
 **without playing anything through the speakers**; the reported peak should match the synthetic
@@ -115,6 +118,7 @@ cannot. The generator runs only while the settings window is open, and a checkbo
 | Palette | Magma, Inferno, Viridis, Classic, Mono, Ice, Sunset, Neon, Ember, Custom | Magma |
 | Custom colours | low / mid / high stops, any colour | blue → green → white |
 | Frame rate | 15 / 30 / 60, capped to the display refresh rate | 30 |
+| Menu bar frame rate | 15 / 30 / 60, independent of the window | 30 |
 | Float above all windows | on / off | off |
 | Window background opacity | 0–100% | 100% |
 | Menu bar width | 40–220 pt | 72 pt |
@@ -276,7 +280,9 @@ running 94 FFTs/sec on digital silence costs ~8% CPU for nothing. Two fixes take
 the *whole visible history* has scrolled to silence — not merely when the current hop is quiet, or
 it would freeze mid-scroll leaving a stale half-drawn image.
 
-Measured: ~9% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 30 MB resident.
+Measured: ~10% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 30 MB resident.
+See the frame-rate findings below for the full breakdown — the menu bar strip, not the window,
+turned out to dominate.
 
 **"Static" means frequency on X, not a cleverer time window.** The first attempt at Stereo and Morph
 put time on X and tried to hold the picture still with a zero-crossing trigger. It still scrolled,
@@ -390,6 +396,44 @@ window no longer opens at launch, that cost is only paid by someone actively loo
 Worth knowing when measuring this: a window covered by another window stops rendering, so opening
 the settings window on top of the visualizer freezes its frame counter. That looked like a standby
 bug for one confusing run and is macOS behaving correctly.
+
+**The menu bar strip costs more than the whole visualizer window.** Profiling for CPU found the
+opposite of the expected answer: a 72x22 pt strip was 10.4% CPU at 60 fps while the 900x320 Metal
+window was 4.5%. Only 32 of the strip's 195 profile samples were our own pixel code — the rest is
+`CALayer::display_if_needed` -> `CABackingStoreUpdate_` -> a CoreGraphics blit, plus a colour-space
+conversion. That overhead is per *redraw* and almost independent of size, so the only real lever is
+how often the strip redraws, not how fast it draws.
+
+Window size barely matters, which confirms it: 900x320 and 1600x900 cost 13.7% and 14.1%. That part
+is GPU-bound, not CPU-bound.
+
+The menu bar strip therefore has its own frame rate now, separate from the window's. Measured with a
+synthetic signal, window at 60 fps:
+
+| | strip 15 | strip 30 | strip 60 |
+|---|---|---|---|
+| Window closed | 4.5% | 7.3% | 11.5% |
+| Window open | 9.6% | 13.7% | ~18% |
+
+**Settings open is the expensive state, and it is the one people measure in.** A report of "30% at
+60 fps" turned out to be 29.0% measured with the settings window open — which is exactly where
+someone goes to compare frame rates, so it is the state they see. Two live preview strips redrawing
+is most of it, one of them 416x96. Capping preview redraws at 24 fps took that to 21.9%, and the
+steady state with settings closed is 12.5%. The lesson is to always record which windows were open
+alongside a CPU number; without that the number means nothing.
+
+**A per-frame smoothing coefficient is a latency bug wearing a smoothing hat.** Attack and release
+were applied once per emitted frame, so halving the frame rate doubled the response time in
+milliseconds. At 55% smoothing the attack constant of 0.33/frame reaches 90% in 5.75 frames — 96 ms
+at 60 fps but 192 ms at 30, and the release constant of 0.0905/frame takes 403 ms versus 807 ms.
+That is why 30 fps felt laggy rather than merely choppy: it *was* laggy, by exactly a factor of two,
+and no amount of frame-rate tuning would have fixed it.
+
+The rates are now time constants — `1 - exp(-dt / tau)` against the real interval since the last
+snapshot — with tau chosen to reproduce the old 60 fps feel exactly. `make check` asserts the
+property directly by driving the same tone at both rates and comparing the level after 150 ms: 0.595
+at 60 fps versus 0.581 at 30, 2.3% apart. Any per-frame coefficient in a pipeline with a
+configurable frame rate deserves the same suspicion.
 
 **Verifying a visualizer without playing audio.** Screenshots are unavailable (the shell has no
 Screen Recording permission) and playing test tones is obnoxious. `NOWSEE_SELFTEST=signal` writes a

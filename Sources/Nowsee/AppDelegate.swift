@@ -142,7 +142,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         self.renderer = renderer
 
-        let view = MTKView(frame: NSRect(x: 0, y: 0, width: 900, height: 320), device: renderer.device)
+        let requested = ProcessInfo.processInfo.environment["NOWSEE_WINDOW"]?
+            .split(separator: "x").compactMap { Double($0) } ?? []
+        let size = requested.count == 2 ? NSSize(width: requested[0], height: requested[1])
+            : NSSize(width: 900, height: 320)
+        let view = MTKView(
+            frame: NSRect(origin: .zero, size: size), device: renderer.device)
         view.colorPixelFormat = .bgra8Unorm
         view.sampleCount = SpectrogramRenderer.sampleCount
         view.delegate = renderer

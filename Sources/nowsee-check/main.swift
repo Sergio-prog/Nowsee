@@ -37,9 +37,11 @@ final class Harness {
         written += count
     }
 
+    var frameInterval: Float = 1.0 / 60
+
     func snapshot() -> [SIMD4<Float>]? {
         var result: [SIMD4<Float>]?
-        analyzer.snapshot { levels in result = levels }
+        analyzer.snapshot(elapsed: frameInterval) { levels in result = levels }
         return result
     }
 
@@ -220,6 +222,39 @@ do {
         "ocean smoothing preserves a steady level",
         flat.allSatisfy { abs($0 - 0.4) < 0.001 },
         String(format: "%.4f", flat[width / 2]))
+}
+
+do {
+    func riseAfter(_ seconds: Double, fps: Double) -> Float {
+        let harness = Harness()
+        harness.frameInterval = Float(1 / fps)
+        let hop = Int(sampleRate / fps)
+        let loud = tone(1000, 0.8)
+
+        _ = harness.settle(4, windowSize) { _ in (0, 0) }
+        var levels: [SIMD4<Float>] = []
+        for _ in 0..<Int(seconds * fps) {
+            harness.write(hop) { index in (loud(index), loud(index)) }
+            if let next = harness.snapshot() { levels = next }
+        }
+        return levels.isEmpty ? 0 : levels[peakBand(levels, 0)].x
+    }
+
+    let fast = riseAfter(0.15, fps: 60)
+    let slow = riseAfter(0.15, fps: 30)
+    let gap = abs(fast - slow) / max(fast, 0.001)
+    check(
+        "attack is frame-rate independent", gap < 0.08,
+        String(format: "%.3f at 60 fps, %.3f at 30 fps, %.1f%% apart", fast, slow, gap * 100))
+
+    let harness = Harness()
+    harness.frameInterval = 1.0 / 60
+    let loud = tone(1000, 0.8)
+    let peak = harness.settle(60, windowSize / 4) { index in (loud(index), loud(index)) }
+    let band = peakBand(peak, 0)
+    check(
+        "a loud tone is most of the way up within 150 ms", peak[band].x > 0.4,
+        String(format: "%.3f", peak[band].x))
 }
 
 print("")

@@ -26,7 +26,14 @@ public final class StereoSpectrumAnalyzer {
 
     private let floorDB: Float = -85
     private let spanDB: Float = 80
-    private let peakDecay: Float = 0.94
+    private let peakTau: Float = 0.27
+
+    private var attackTau: Float { 0.020 + smoothing * 0.085 }
+    private var releaseTau: Float { 0.110 + smoothing * 0.215 }
+
+    private func rate(_ tau: Float, _ elapsed: Float) -> Float {
+        tau <= 0 ? 1 : 1 - exp(-elapsed / tau)
+    }
 
     public init(
         left: AudioRingBuffer,
@@ -63,15 +70,16 @@ public final class StereoSpectrumAnalyzer {
         rightFrame.deallocate()
     }
 
-    public func snapshot(_ emit: ([SIMD4<Float>]) -> Void) {
+    public func snapshot(elapsed: Float, _ emit: ([SIMD4<Float>]) -> Void) {
         let available = min(left.framesWritten, right.framesWritten)
         guard available >= UInt64(windowSize) else { return }
         guard left.read(into: leftFrame, count: windowSize, endingAt: available),
             right.read(into: rightFrame, count: windowSize, endingAt: available)
         else { return }
 
-        blend(channel: 0, frame: leftFrame, stft: leftSTFT)
-        blend(channel: 1, frame: rightFrame, stft: rightSTFT)
+        let step = max(0, min(0.25, elapsed))
+        blend(channel: 0, frame: leftFrame, stft: leftSTFT, elapsed: step)
+        blend(channel: 1, frame: rightFrame, stft: rightSTFT, elapsed: step)
         emit(levels)
     }
 
@@ -87,9 +95,12 @@ public final class StereoSpectrumAnalyzer {
         kernel = weights.map { $0 / total }
     }
 
-    private func blend(channel: Int, frame: UnsafeMutablePointer<Float>, stft: STFT) {
-        let attack = 0.55 - smoothing * 0.4
-        let release = 0.14 - smoothing * 0.09
+    private func blend(
+        channel: Int, frame: UnsafeMutablePointer<Float>, stft: STFT, elapsed: Float
+    ) {
+        let attack = rate(attackTau, elapsed)
+        let release = rate(releaseTau, elapsed)
+        let peakFall = exp(-elapsed / peakTau)
 
         var loudest: Float = 0
         vDSP_maxmgv(frame, 1, &loudest, vDSP_Length(windowSize))
@@ -97,7 +108,7 @@ public final class StereoSpectrumAnalyzer {
         if loudest < 1e-6 {
             for index in 0..<bandCount {
                 levels[index][channel] *= 1 - release
-                levels[index][channel + 2] *= peakDecay
+                levels[index][channel + 2] *= peakFall
             }
             return
         }
@@ -116,7 +127,7 @@ public final class StereoSpectrumAnalyzer {
             let rate = target > previous ? attack : release
             let level = previous + (target - previous) * rate
             levels[index][channel] = level
-            levels[index][channel + 2] = max(levels[index][channel + 2] * peakDecay, level)
+            levels[index][channel + 2] = max(levels[index][channel + 2] * peakFall, level)
         }
     }
 

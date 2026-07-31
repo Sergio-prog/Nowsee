@@ -140,7 +140,8 @@ final class AudioEngine {
         let now = CACurrentMediaTime()
         let interval = 1.0 / Double(max(frameRate, 1)) - Self.drainTick / 2
         guard now - lastScopeEmit >= interval else { return }
+        let elapsed = lastScopeEmit > 0 ? now - lastScopeEmit : 1.0 / Double(max(frameRate, 1))
         lastScopeEmit = now
-        stereoSpectrum?.snapshot { levels in onSpectrumBands?(levels) }
+        stereoSpectrum?.snapshot(elapsed: Float(elapsed)) { levels in onSpectrumBands?(levels) }
     }
 }

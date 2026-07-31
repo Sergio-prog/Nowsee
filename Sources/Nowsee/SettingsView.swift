@@ -274,6 +274,21 @@ struct SettingsView: View {
             slider(
                 "Opacity", value: $settings.barOpacity, range: 0.2...1,
                 display: "\(Int(settings.barOpacity * 100))%")
+
+            Picker("Frame rate", selection: $settings.menuBarFrameRate) {
+                ForEach(NowseeSettings.frameRateOptions, id: \.self) { rate in
+                    Text("\(rate) fps").tag(rate)
+                }
+            }
+
+            Text(
+                "This is the single biggest thing Nowsee spends CPU on — redrawing a menu bar item "
+                    + "is costly no matter how small it is. Measured here: 10.4% at 60 fps, 5.8% at "
+                    + "30, against 4.5% for the whole visualizer window. 30 looks the same at this "
+                    + "size."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 

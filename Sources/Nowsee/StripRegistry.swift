@@ -73,6 +73,7 @@ final class StripRegistry {
         strip.standbyIntensity = CGFloat(settings.standbyIntensity)
         strip.baselineOpacity = CGFloat(settings.baselineOpacity)
         strip.baselineTint = settings.baselineMatchesSystem ? nil : settings.baselineNSColor
-        strip.redrawInterval = 1.0 / Double(settings.frameRate)
+        let rate = strip.isPreview ? settings.previewFrameRate : settings.menuBarFrameRate
+        strip.redrawInterval = 1.0 / Double(max(1, rate))
     }
 }
