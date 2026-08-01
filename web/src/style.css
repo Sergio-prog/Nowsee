@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #08070d;
+  --color-panel: #0d0c15;
+  --color-ink: #efedf5;
+  --color-dim: #8a869b;
+  --color-dimmer: #5d5a6d;
+  --color-hairline: rgba(255, 255, 255, 0.085);
+  --color-hairline-bright: rgba(255, 255, 255, 0.16);
+
+  --color-magma-0: #000004;
+  --color-magma-1: #3b0f6f;
+  --color-magma-2: #8c2981;
+  --color-magma-3: #dd4968;
+  --color-magma-4: #fc8d62;
+  --color-magma-5: #fcfdbf;
+
+  --font-display: ui-sans-serif, -apple-system, "SF Pro Display", "Helvetica Neue", Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono", monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-void text-ink font-display min-h-dvh flex flex-col overflow-x-hidden;
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-[3px] outline-magma-4 rounded-[3px];
+  }
+}
+
+@utility label-mono {
+  @apply font-mono text-[10px] tracking-[0.13em] uppercase;
+}
+
+@utility atmosphere {
+  background:
+    radial-gradient(120% 78% at 50% -14%, rgba(140, 41, 129, 0.3), transparent 62%),
+    radial-gradient(90% 62% at 82% 8%, rgba(221, 73, 104, 0.13), transparent 58%);
+}
+
+@utility stage-glow {
+  box-shadow:
+    0 34px 90px -34px rgba(140, 41, 129, 0.6),
+    inset 0 2px 0 rgba(255, 255, 255, 0.05);
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.live-dot::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-magma-4);
+  box-shadow: 0 0 8px var(--color-magma-4);
+  animation: pulse-dot 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

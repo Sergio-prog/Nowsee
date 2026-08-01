@@ -10,9 +10,13 @@ APP := dist/Nowsee.app
 ICONSET := dist/Nowsee.iconset
 ICNS := dist/Nowsee.icns
 
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Sources/Nowsee/Info.plist)
+ZIP := dist/Nowsee-$(VERSION).zip
+CASK := homebrew/nowsee.rb
+
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app check icon run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean
+.PHONY: cert app check icon run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version
 
 check:
 	$(SWIFT) run -c $(CONFIG) nowsee-check
@@ -71,6 +75,23 @@ probe-app:
 run-probe-app: probe-app
 	@rm -f "$$HOME/Library/Logs/nowsee-probe.log"
 	open "$(PROBE_APP)" --args 15
+
+version:
+	@echo $(VERSION)
+
+release: check app
+	rm -f "$(ZIP)"
+	ditto -c -k --sequesterRsrc --keepParent "$(APP)" "$(ZIP)"
+	@sha=$$(shasum -a 256 "$(ZIP)" | awk '{print $$1}'); \
+	sed -i '' -e 's|^  version ".*"|  version "$(VERSION)"|' -e "s|^  sha256 \".*\"|  sha256 \"$$sha\"|" "$(CASK)"; \
+	echo; \
+	echo "$(ZIP)  ($$(du -h "$(ZIP)" | cut -f1))"; \
+	echo "sha256  $$sha"; \
+	echo "$(CASK) updated to $(VERSION)"; \
+	echo; \
+	echo "next:"; \
+	echo "  gh release create v$(VERSION) \"$(ZIP)\" --title v$(VERSION) --generate-notes"; \
+	echo "  cp $(CASK) ../homebrew-tap/Casks/nowsee.rb && commit it"
 
 reset-tcc:
 	tccutil reset SystemAudioCaptureRequests sh.nowsee.probe || true

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nowsee — a live visualizer for macOS system audio</title>
+    <meta
+      name="description"
+      content="Nowsee draws whatever your Mac is playing, live, in the menu bar and in a window. Six visualizations, ten palettes, no account. Free and open source."
+    />
+    <link rel="canonical" href="https://nowsee.serhiifotex.dev/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://nowsee.serhiifotex.dev/" />
+    <meta property="og:title" content="Nowsee — a live visualizer for macOS system audio" />
+    <meta
+      property="og:description"
+      content="Draws whatever your Mac is playing, live, in the menu bar and in a window. Free and open source."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#08070d" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0a12'/%3E%3Crect x='13' y='28' width='7' height='18' rx='3' fill='%238c2981'/%3E%3Crect x='24' y='15' width='7' height='31' rx='3' fill='%23dd4968'/%3E%3Crect x='35' y='22' width='7' height='24' rx='3' fill='%23fc8d62'/%3E%3Crect x='46' y='33' width='7' height='13' rx='3' fill='%23fcfdbf'/%3E%3C/svg%3E"
+    />
+    <script type="module" src="/src/main.js"></script>
+  </head>
+
+  <body>
+    <div class="atmosphere pointer-events-none fixed inset-0 z-0"></div>
+
+    <div
+      class="sticky top-0 z-20 flex h-[26px] items-center gap-[18px] border-b border-hairline bg-[#0c0b13]/72 px-3 text-[12.5px] backdrop-blur-xl backdrop-saturate-150"
+    >
+      <span class="font-bold tracking-tight">Nowsee</span>
+      <nav class="hidden gap-[17px] text-ink/72 sm:flex" aria-label="Main">
+        <a href="#stage" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Visualizations</a>
+        <a href="#install" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Install</a>
+        <a href="https://github.com/Sergio-prog/Nowsee" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Source</a>
+      </nav>
+      <div class="ml-auto flex items-center gap-[13px]">
+        <canvas id="strip" class="block h-[18px] w-[76px]" width="152" height="36" aria-hidden="true"></canvas>
+        <span id="clock" class="font-mono text-[11.5px] tabular-nums tracking-tight text-ink/82">--:--</span>
+      </div>
+    </div>
+
+    <main
+      class="relative z-10 mx-auto flex w-full max-w-[940px] flex-1 flex-col justify-center gap-[clamp(16px,2.6vh,28px)] px-6 pt-[clamp(18px,3.2vh,38px)] pb-[clamp(16px,2.4vh,26px)]"
+    >
+      <header>
+        <p class="label-mono mb-3.5 tracking-[0.17em] text-dimmer">Live system audio · macOS</p>
+        <h1
+          class="max-w-[19ch] text-[clamp(1.85rem,4.1vw,2.95rem)] leading-[1.05] font-semibold tracking-[-0.036em] text-dim"
+        >
+          <b class="font-semibold text-ink">Nowsee</b> draws whatever your Mac is playing, as it plays.
+        </h1>
+        <p class="mt-4 max-w-[54ch] text-[clamp(0.95rem,1.55vw,1.06rem)] leading-relaxed text-dim">
+          It taps the output mix, so it works with anything that makes sound — Spotify, a video
+          call, a game. It lives in the menu bar: no dock icon, no window on launch, no account.
+        </p>
+      </header>
+
+      <section id="stage" aria-label="Live visualization demo">
+        <div class="stage-glow relative overflow-hidden rounded-xl border border-hairline bg-black">
+          <canvas
+            id="scope"
+            class="block h-[clamp(140px,23vh,215px)] w-full"
+            width="1760"
+            height="500"
+            aria-label="A running demonstration of the visualizer, drawing a synthetic signal"
+          ></canvas>
+          <span
+            id="stageTag"
+            class="label-mono pointer-events-none absolute top-2 left-2 rounded-[5px] bg-[#06050b]/58 px-[7px] py-[3px] text-white/74 backdrop-blur-sm"
+            >Spectrogram</span
+          >
+          <span
+            class="live-dot label-mono pointer-events-none absolute top-2 right-2 flex items-center gap-[5px] rounded-[5px] bg-[#06050b]/58 px-[7px] py-[3px] text-white/74 backdrop-blur-sm"
+            >Live</span
+          >
+        </div>
+
+        <p class="mt-2.5 font-mono text-[11px] leading-normal text-dimmer">
+          Running the same synthetic signal Nowsee uses to preview its own settings in a quiet
+          room. Pick a mode and the strip in the menu bar above changes with it.
+        </p>
+      </section>
+
+      <section class="flex flex-wrap items-center gap-x-6 gap-y-2.5" aria-label="Demo controls">
+        <div class="flex flex-wrap items-center gap-2.5">
+          <span class="label-mono text-dimmer" id="modeLabel">Mode</span>
+          <div class="flex flex-wrap gap-[5px]" role="group" aria-labelledby="modeLabel" id="modes"></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <span class="label-mono text-dimmer" id="paletteLabel">Palette</span>
+          <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="paletteLabel" id="palettes"></div>
+        </div>
+      </section>
+
+      <section id="install" class="flex flex-wrap items-center gap-3" aria-label="Install">
+        <a
+          href="https://github.com/Sergio-prog/Nowsee/releases/latest"
+          class="inline-flex items-baseline gap-[9px] rounded-[9px] bg-linear-103 from-magma-4 to-magma-3 px-5 py-[11px] text-[0.95rem] font-medium tracking-tight text-[#1a0410] transition hover:-translate-y-px hover:brightness-110"
+        >
+          Download for macOS <span class="font-mono text-[0.78rem] opacity-60">· free</span>
+        </a>
+        <div class="flex min-w-0 items-center gap-1 rounded-[9px] border border-hairline bg-white/2 py-[5px] pr-[5px] pl-[13px]">
+          <code class="min-w-0 overflow-x-auto font-mono text-[0.795rem] whitespace-nowrap text-dim"
+            >brew install --cask <b class="font-normal text-ink">nowsee</b></code
+          >
+          <button
+            id="copy"
+            type="button"
+            class="cursor-pointer rounded-md px-[9px] py-1.5 font-mono text-[0.72rem] text-dimmer transition-colors hover:bg-white/6 hover:text-ink"
+          >
+            Copy
+          </button>
+        </div>
+      </section>
+
+      <p class="font-mono text-[11px] leading-relaxed text-dimmer">
+        macOS 15 or later. Signed but not notarized — right-click → Open on first launch.<br />
+        Nowsee asks to record system audio. Nothing is written to disk, nothing leaves your Mac,
+        and the microphone is never touched.
+      </p>
+    </main>
+
+    <footer
+      class="relative z-10 flex flex-wrap items-center gap-x-[22px] gap-y-2 border-t border-hairline px-6 py-[13px] font-mono text-[11px] text-dimmer"
+    >
+      <span>MIT licensed</span>
+      <a href="https://github.com/Sergio-prog/Nowsee" class="transition-colors hover:text-ink">GitHub</a>
+      <a href="https://github.com/Sergio-prog/Nowsee/blob/main/docs/ENGINEERING.md" class="transition-colors hover:text-ink">Engineering notes</a>
+      <a href="https://github.com/Sergio-prog/Nowsee/blob/main/ROADMAP.md" class="transition-colors hover:text-ink">Roadmap</a>
+      <span class="ml-auto">Inspired by <a href="https://songsee.sh/" class="transition-colors hover:text-ink">songsee</a></span>
+    </footer>
+  </body>
+</html>
