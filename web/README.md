@@ -59,7 +59,7 @@ src/studio/schema.js  defaults and every control, as data
 src/studio/controls.js  builds the rail from the schema
 src/studio/render.js  one draw function per studio mode, plus the bloom pass
 src/studio/main.js    wiring: state, persistence, keys, frame loop
-public/CNAME          custom domain for GitHub Pages
+vercel.json           build command, output directory, asset caching
 ```
 
 Adding a control means adding one entry to `GROUPS` in `schema.js` and reading `s.<key>` in the
@@ -76,11 +76,16 @@ down. The site is served from a domain root, so this is safe; opening `dist/inde
 
 ## Deploying
 
-`.github/workflows/pages.yml` builds `web/` and publishes to GitHub Pages on any push to `main`
-that touches it. Two one-time steps:
+Vercel builds on every push to `main` through its own Git integration, so there is no deploy
+workflow in this repo — `.github/workflows/ci.yml` only checks that the build still compiles.
+`vercel.json` holds the build command and output directory; everything else is project settings.
 
-1. Repository → Settings → Pages → Source: **GitHub Actions**.
-2. A DNS `CNAME` record for `nowsee` pointing at `sergio-prog.github.io`.
+Three one-time steps:
 
-`public/CNAME` is copied into `dist/` by Vite, which is what keeps the custom domain set across
-deploys.
+1. Import the repository at [vercel.com/new](https://vercel.com/new) and set **Root Directory**
+   to `web`. Vercel finds `bun.lock` and builds with bun.
+2. Project → Settings → Domains: add `nowsee.serhiifotex.dev`.
+3. A DNS `CNAME` record for `nowsee` pointing at `cname.vercel-dns.com`.
+
+`trailingSlash` is on so `/studio/` stays `/studio/`, matching the `<link rel="canonical">` tags.
+Vite hashes asset filenames, so `/assets/*` is served immutable for a year.

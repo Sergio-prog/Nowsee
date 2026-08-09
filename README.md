@@ -223,7 +223,7 @@ scripts/
   make-icon.swift           draws the iconset; make icon runs iconutil over it
   make-cert.sh              self-signed identity so TCC remembers the grant
 homebrew/nowsee.rb          cask, published to Sergio-prog/homebrew-tap
-web/                        the landing page at nowsee.serhiifotex.dev
+web/                        nowsee.serhiifotex.dev — landing page and /studio/
 ```
 
 `SystemAudioTap` splits every callback into left and right channels first and derives the mono
