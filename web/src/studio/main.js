@@ -93,6 +93,12 @@ const modeDetail = $("modeDetail");
 const stageTag = $("stageTag");
 const sourceNote = $("sourceNote");
 
+function syncTag() {
+  const mode = MODES.find((item) => item.id === state.mode);
+  const source = SOURCES.find((item) => item.id === engine.status.kind);
+  stageTag.textContent = `${mode.label} · ${source.label}`;
+}
+
 const controls = createControls(rail, state, (key, value) => {
   state[key] = value;
   Object.assign(stripState, state, STRIP);
@@ -124,9 +130,8 @@ function setMode(id) {
   modeButtons.forEach(({ button, mode }) =>
     button.setAttribute("aria-pressed", String(mode.id === id)),
   );
-  const current = MODES.find((mode) => mode.id === id);
-  stageTag.textContent = current.label;
-  modeDetail.textContent = current.detail;
+  modeDetail.textContent = MODES.find((mode) => mode.id === id).detail;
+  syncTag();
   controls.refresh();
   persist();
 }
@@ -153,6 +158,7 @@ function syncSource() {
   const active = SOURCES.find((source) => source.id === engine.status.kind);
   sourceNote.textContent = engine.status.error || `${engine.status.detail} · ${active.hint}`;
   sourceNote.style.color = engine.status.error ? "var(--accent)" : "";
+  syncTag();
 }
 
 async function pickSource(kind, payload) {

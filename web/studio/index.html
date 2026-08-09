@@ -42,13 +42,8 @@
       id="shell"
       class="relative z-10 grid min-h-0 flex-1 grid-cols-1 items-start lg:h-[calc(100dvh-26px)] lg:grid-cols-[minmax(0,1fr)_336px]"
     >
-      <div class="flex min-h-0 min-w-0 flex-col gap-3 px-5 pt-5 pb-6 sm:px-7 lg:h-full lg:pb-5">
-        <header class="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 class="text-[clamp(1.15rem,2vw,1.5rem)] leading-tight font-semibold tracking-[-0.03em] text-dim">
-            <b class="font-semibold text-ink">Tune it here</b>, then take it with you.
-          </h1>
-          <p class="label-mono text-dimmer">Studio · runs in this tab</p>
-        </header>
+      <div class="flex min-h-0 min-w-0 flex-col gap-3 px-5 pt-4 pb-6 sm:px-7 lg:h-full lg:pb-5">
+        <h1 class="sr-only">Nowsee Studio — build a visualizer in the browser</h1>
 
         <div
           id="stageBox"
@@ -67,15 +62,15 @@
         </div>
 
         <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2.5">
-          <div class="flex items-center gap-2" aria-label="Output level">
+          <div class="flex items-center gap-[5px]" aria-label="Output level">
             <span class="label-mono text-dimmer">L</span>
-            <div class="h-[3px] w-[52px] overflow-hidden rounded-full bg-white/10">
+            <div class="flex h-[3px] w-[54px] justify-end overflow-hidden rounded-full bg-white/10">
               <div id="meterL" class="h-full w-0 rounded-full bg-[var(--accent)] transition-[width] duration-75"></div>
             </div>
-            <span class="label-mono text-dimmer">R</span>
-            <div class="h-[3px] w-[52px] overflow-hidden rounded-full bg-white/10">
+            <div class="flex h-[3px] w-[54px] overflow-hidden rounded-full bg-white/10">
               <div id="meterR" class="h-full w-0 rounded-full bg-[var(--accent)] transition-[width] duration-75"></div>
             </div>
+            <span class="label-mono text-dimmer">R</span>
           </div>
           <span id="fps" class="font-mono text-[11px] tabular-nums text-dimmer">— fps</span>
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
@@ -92,7 +87,7 @@
         aria-label="Controls"
       >
         <div class="flex items-center justify-between gap-3 px-4 py-3">
-          <h2 class="label-mono text-dimmer">Controls</h2>
+          <h2 class="label-mono text-ink/70">Controls</h2>
           <div class="flex gap-1.5">
             <button id="randomise" type="button" class="action">Surprise me</button>
             <button id="reset" type="button" class="action">Reset</button>
@@ -100,7 +95,7 @@
         </div>
 
         <section class="border-t border-hairline px-4 py-4">
-          <h3 class="label-mono mb-3 text-dimmer">Source</h3>
+          <h3 class="label-mono mb-3 text-dim">Source</h3>
           <div id="sources" class="flex flex-wrap gap-1.5" role="group" aria-label="Audio source"></div>
           <p id="sourceNote" class="mt-2.5 font-mono text-[10.5px] leading-relaxed text-dimmer">
             Synthetic · Nothing to allow.
@@ -113,7 +108,7 @@
         </section>
 
         <section class="border-t border-hairline px-4 py-4">
-          <h3 class="label-mono mb-3 text-dimmer">Mode</h3>
+          <h3 class="label-mono mb-3 text-dim">Mode</h3>
           <div id="modes" class="grid grid-cols-2 gap-1.5" role="group" aria-label="Visualization mode"></div>
           <p id="modeDetail" class="mt-2.5 font-mono text-[10.5px] leading-relaxed text-dimmer">
             A dotted ribbon that folds along the signal.

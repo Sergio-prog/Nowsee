@@ -3,7 +3,7 @@ import { GROUPS } from "./schema.js";
 
 const ROW = "flex flex-col gap-[7px]";
 const HEAD = "flex items-baseline justify-between gap-3";
-const NAME = "font-mono text-[10.5px] tracking-[0.11em] uppercase text-dim";
+const NAME = "font-mono text-[11px] text-dimmer";
 const VALUE = "font-mono text-[11px] tabular-nums text-ink/85";
 const SEGMENT =
   "flex-1 cursor-pointer rounded-[5px] px-2 py-[5px] font-mono text-[11px] text-dim transition-colors hover:text-ink aria-pressed:bg-[var(--accent)] aria-pressed:text-[var(--accent-ink)]";
@@ -181,7 +181,7 @@ export function createControls(root, state, onChange) {
 
   GROUPS.forEach((group) => {
     const section = el("section", "border-t border-hairline px-4 py-4");
-    const title = el("h3", "label-mono mb-3 text-dimmer", group.title);
+    const title = el("h3", "label-mono mb-3 text-dim", group.title);
     const body = el("div", "flex flex-col gap-[13px]");
     section.append(title, body);
 

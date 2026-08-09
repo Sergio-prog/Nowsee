@@ -39,7 +39,8 @@
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-[3px] outline-magma-4 rounded-[3px];
+    @apply outline-2 outline-offset-[3px] rounded-[3px];
+    outline-color: var(--accent);
   }
 }
 
