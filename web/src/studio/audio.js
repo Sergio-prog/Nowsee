@@ -96,7 +96,7 @@ export function createEngine() {
       stream.removeTrack(track);
     });
     if (!stream.getAudioTracks().length) {
-      throw new Error("No audio in that share. Tick “Share tab audio” in the picker.");
+      throw new Error("That share had no audio. Tick “Share audio” in the picker and retry.");
     }
     await ensureContext();
     connect(context.createMediaStreamSource(stream));

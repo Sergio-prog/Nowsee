@@ -156,7 +156,8 @@ function syncSource() {
 }
 
 async function pickSource(kind, payload) {
-  sourceNote.textContent = "Waiting for permission…";
+  sourceNote.textContent =
+    kind === "tab" ? "Pick a tab or screen, then tick “Share audio”." : "Waiting for permission…";
   await engine.setSource(kind, payload);
   syncSource();
 }
@@ -299,13 +300,6 @@ if (window.ResizeObserver) {
 window.addEventListener("resize", resize);
 document.addEventListener("fullscreenchange", resize);
 resize();
-
-const clock = $("clock");
-const showTime = () => {
-  clock.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-};
-showTime();
-setInterval(showTime, 20000);
 
 engine.onstatus = syncSource;
 applyPalette();

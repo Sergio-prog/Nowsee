@@ -3,10 +3,13 @@ import { BANDS, WAVE, clamp } from "./dsp.js";
 const TWO_PI = Math.PI * 2;
 
 export function createScene(canvas) {
+  const layer = document.createElement("canvas");
   const glow = document.createElement("canvas");
   return {
     canvas,
     ctx: canvas.getContext("2d", { alpha: false }),
+    layer,
+    lctx: layer.getContext("2d"),
     glow,
     gctx: glow.getContext("2d"),
     caps: new Float32Array(256),
@@ -28,6 +31,10 @@ export function sizeScene(scene, maxDpr = 2) {
     scene.canvas.width = w;
     scene.canvas.height = h;
   }
+  if (w !== scene.layer.width || h !== scene.layer.height) {
+    scene.layer.width = w;
+    scene.layer.height = h;
+  }
   scene.w = w;
   scene.h = h;
   scene.dpr = dpr;
@@ -36,11 +43,6 @@ export function sizeScene(scene, maxDpr = 2) {
 function rgb(hex) {
   const value = parseInt(hex.slice(1), 16);
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-function luminance(hex) {
-  const [r, g, b] = rgb(hex);
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
 function alphaOf(hex, alpha) {
@@ -81,8 +83,8 @@ function block(ctx, x, y, width, height, radius) {
   }
 }
 
-function drawWaves(scene, frame, s, lut) {
-  const { ctx, w, h, dpr } = scene;
+function drawWaves(ctx, scene, frame, s, lut) {
+  const { w, h, dpr } = scene;
   const mid = h * 0.5;
   const layers = Math.round(s.waveLayers);
   const dots = Math.round(s.waveDots);
@@ -151,8 +153,8 @@ function traceLobe(ctx, data, axis, scale, sign, w, smooth, close) {
   }
 }
 
-function drawStereo(scene, frame, s, lut) {
-  const { ctx, w, h, dpr } = scene;
+function drawStereo(ctx, scene, frame, s, lut) {
+  const { w, h, dpr } = scene;
   const axis = h * s.stereoAxis;
   const scale = h * s.stereoScale * 0.5;
 
@@ -202,8 +204,8 @@ function barLevel(frame, s, index, count) {
   return Math.max(sliceLevel(frame.left, from, to), sliceLevel(frame.right, from, to));
 }
 
-function drawBars(scene, frame, s, lut, dt) {
-  const { ctx, w, h } = scene;
+function drawBars(ctx, scene, frame, s, lut, dt) {
+  const { w, h } = scene;
   const count = Math.round(s.barCount);
   const slot = w / count;
   const gap = slot * s.barGap;
@@ -242,8 +244,8 @@ function drawBars(scene, frame, s, lut, dt) {
   }
 }
 
-function drawSphere(scene, frame, s, lut) {
-  const { ctx, w, h, dpr } = scene;
+function drawSphere(ctx, scene, frame, s, lut) {
+  const { w, h, dpr } = scene;
   const rings = Math.round(s.sphereRings);
   const points = Math.round(s.spherePoints);
   const radius = Math.min(w, h) * 0.5 * s.sphereRadius;
@@ -311,8 +313,8 @@ function drawSphere(scene, frame, s, lut) {
   }
 }
 
-function bloom(scene, amount, background) {
-  const { canvas, ctx, glow, gctx, w, h } = scene;
+function bloom(scene, amount) {
+  const { ctx, layer, glow, gctx, w, h } = scene;
   const width = Math.max(1, Math.round(w * 0.32));
   const height = Math.max(1, Math.round(h * 0.32));
   if (glow.width !== width || glow.height !== height) {
@@ -320,10 +322,10 @@ function bloom(scene, amount, background) {
     glow.height = height;
   }
   gctx.clearRect(0, 0, width, height);
-  gctx.drawImage(canvas, 0, 0, width, height);
+  gctx.drawImage(layer, 0, 0, width, height);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.globalAlpha = (0.18 + amount * 0.62) * (1 - luminance(background) * 0.85);
+  ctx.globalAlpha = 0.18 + amount * 0.62;
   ctx.filter = `blur(${(1.5 + amount * 9) * scene.dpr}px)`;
   ctx.drawImage(glow, 0, 0, w, h);
   ctx.restore();
@@ -336,18 +338,25 @@ const RENDER = {
   sphere: drawSphere,
 };
 
-export function paint(scene, frame, s, lut, dt) {
-  if (!scene.w) return;
-  const { ctx, w, h } = scene;
-  scene.t += dt;
+function reset(ctx) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
   ctx.filter = "none";
+}
+
+export function paint(scene, frame, s, lut, dt) {
+  if (!scene.w) return;
+  const { ctx, lctx, w, h } = scene;
+  scene.t += dt;
+
+  reset(lctx);
+  lctx.clearRect(0, 0, w, h);
+  RENDER[s.mode](lctx, scene, frame, s, lut, dt);
+
+  reset(ctx);
   ctx.fillStyle = s.trails > 0 ? alphaOf(s.background, Math.max(0.05, 1 - s.trails)) : s.background;
   ctx.fillRect(0, 0, w, h);
-  RENDER[s.mode](scene, frame, s, lut, dt);
-  ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = 1;
-  if (s.glow > 0) bloom(scene, s.glow, s.background);
+  ctx.drawImage(scene.layer, 0, 0);
+  if (s.glow > 0) bloom(scene, s.glow);
 }

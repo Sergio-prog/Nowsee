@@ -6,10 +6,10 @@ export const MODES = [
 ];
 
 export const SOURCES = [
-  { id: "demo", label: "Demo signal", hint: "Synthetic. Nothing to allow." },
+  { id: "demo", label: "Demo signal", hint: "Nothing to allow." },
   { id: "mic", label: "Microphone", hint: "Asks for input access." },
   { id: "file", label: "Audio file", hint: "Plays locally. Never uploaded." },
-  { id: "tab", label: "Tab audio", hint: "Chrome and Edge. Share a tab with sound." },
+  { id: "tab", label: "Tab audio", hint: "Chrome and Edge. Tick “Share audio” in the picker." },
 ];
 
 export const DEFAULTS = {
