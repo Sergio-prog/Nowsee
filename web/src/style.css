@@ -21,6 +21,13 @@
 }
 
 @layer base {
+  :root {
+    --accent: var(--color-magma-4);
+    --accent-ink: #1a0410;
+    --halo: rgba(140, 41, 129, 0.3);
+    --halo-soft: rgba(221, 73, 104, 0.13);
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
   }
@@ -52,6 +59,103 @@
     inset 0 2px 0 rgba(255, 255, 255, 0.05);
 }
 
+@utility halo {
+  background:
+    radial-gradient(120% 78% at 50% -14%, var(--halo), transparent 62%),
+    radial-gradient(90% 62% at 82% 8%, var(--halo-soft), transparent 58%);
+  transition: background 0.4s ease;
+}
+
+@utility stage-halo {
+  box-shadow:
+    0 34px 90px -34px var(--halo),
+    inset 0 2px 0 rgba(255, 255, 255, 0.05);
+  transition: box-shadow 0.4s ease;
+}
+
+@utility action {
+  @apply cursor-pointer rounded-[6px] border border-hairline bg-white/3 px-[9px] py-[5px] font-mono text-[11px] text-dim transition-colors;
+  @apply hover:border-hairline-bright hover:text-ink;
+  @apply aria-pressed:border-transparent aria-pressed:bg-[var(--accent)] aria-pressed:text-[var(--accent-ink)];
+}
+
+#stageBox:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: 0;
+}
+
+.knob {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.knob::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) var(--fill, 0%),
+    rgba(255, 255, 255, 0.11) var(--fill, 0%)
+  );
+}
+
+.knob::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5);
+  transition: transform 0.12s ease;
+}
+
+.knob:hover::-webkit-slider-thumb,
+.knob:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.knob::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.knob::-moz-range-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.knob::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-ink);
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+
 @keyframes pulse-dot {
   50% {
     opacity: 0.3;
@@ -63,8 +167,8 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--color-magma-4);
-  box-shadow: 0 0 8px var(--color-magma-4);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
   animation: pulse-dot 2.6s ease-in-out infinite;
 }
 

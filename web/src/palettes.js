@@ -15,6 +15,18 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+function rgbToHex(rgb) {
+  return `#${rgb.map((c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function customStops(low, mid, high) {
+  const l = hexToRgb(low);
+  const m = hexToRgb(mid);
+  const h = hexToRgb(high);
+  const blend = (a, b) => rgbToHex(a.map((v, i) => v + (b[i] - v) * 0.5));
+  return [rgbToHex(l.map((c) => c * 0.15)), low, blend(l, m), mid, blend(m, h), high];
+}
+
 export function buildLut(stops) {
   const rgb = stops.map(hexToRgb);
   const out = new Uint8ClampedArray(256 * 3);
