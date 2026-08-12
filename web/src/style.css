@@ -158,6 +158,11 @@ input[type="color"]::-webkit-color-swatch {
   border-radius: 2px;
 }
 
+.studio-note {
+  border-left: 2px solid rgba(252, 141, 98, 0.42);
+  padding-left: 10px;
+}
+
 .wordmark {
   background-image: linear-gradient(
     100deg,
