@@ -26,6 +26,7 @@
     --accent-ink: #1a0410;
     --halo: rgba(140, 41, 129, 0.3);
     --halo-soft: rgba(221, 73, 104, 0.13);
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   }
 
   html {
@@ -155,6 +156,39 @@ input[type="color"]::-webkit-color-swatch-wrapper {
 input[type="color"]::-webkit-color-swatch {
   border: 0;
   border-radius: 2px;
+}
+
+.studio-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(252, 141, 98, 0.34);
+  background: rgba(252, 141, 98, 0.09);
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition:
+    border-color 0.2s var(--ease-out-quart),
+    background-color 0.2s var(--ease-out-quart),
+    box-shadow 0.2s var(--ease-out-quart);
+}
+
+.studio-cta:hover {
+  border-color: rgba(252, 141, 98, 0.72);
+  background: rgba(252, 141, 98, 0.16);
+  box-shadow: 0 0 0 4px rgba(252, 141, 98, 0.08);
+}
+
+.studio-cta-arrow {
+  color: var(--accent);
+  transition: transform 0.2s var(--ease-out-quart);
+}
+
+.studio-cta:hover .studio-cta-arrow {
+  transform: translateX(3px);
 }
 
 @keyframes pulse-dot {
