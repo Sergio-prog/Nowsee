@@ -3,10 +3,10 @@ import { BANDS, HISTORY } from "./signal.js";
 const FIXED_GAIN = 1.7;
 
 export const MODES = [
+  { id: "bars", label: "Bars" },
   { id: "spectrogram", label: "Spectrogram" },
   { id: "waveform", label: "Waveform" },
   { id: "ocean", label: "Ocean" },
-  { id: "bars", label: "Bars" },
   { id: "stereo", label: "Stereo" },
   { id: "morph", label: "Morph" },
 ];

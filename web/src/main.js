@@ -7,7 +7,7 @@ const FPS = 30;
 const BREW = "brew install --cask nowsee";
 
 const signal = createSignal();
-let mode = "spectrogram";
+let mode = MODES[0].id;
 let lut = buildLut(PALETTES.magma);
 
 const surfaces = [
