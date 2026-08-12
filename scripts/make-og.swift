@@ -7,7 +7,9 @@ let outputPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "w
 let width = 1200
 let height = 630
 let bands = 96
-let columns = 400
+let barCount = 52
+let frames = 906
+let fixedGain = 1.7
 let harmonics = 15
 
 let magmaStops: [SIMD3<Double>] = [
@@ -64,13 +66,13 @@ func addPeak(_ target: inout [Double], _ centre: Double, _ amp: Double, _ width:
     }
 }
 
-func spectrogramHistory() -> [[Double]] {
+func settledBars() -> (levels: [Double], peaks: [Double]) {
     var smooth = [Double](repeating: 0, count: bands)
-    var history = [[Double]]()
+    var peaks = [Double](repeating: 0, count: barCount)
     var clock = 0.0
     let dt = 1.0 / 30.0
 
-    for step in 0..<(columns * 2) {
+    for _ in 0..<frames {
         clock += dt
         let beat = (clock * 108 / 60).truncatingRemainder(dividingBy: 1)
         let hit = exp(-beat * 5.5)
@@ -98,58 +100,50 @@ func spectrogramHistory() -> [[Double]] {
             let x = Double(b) / Double(bands - 1)
             let air = 0.05 * (1 - x)
             let sizzle = x > 0.5 ? 0.16 * bar * hit * noise(Double(b) + floor(clock * 14)) : 0
-            left[b] = min(1, max(0, left[b] * 0.56 + air + sizzle))
-            smooth[b] += (left[b] - smooth[b]) * 0.34
+            let value = min(1, max(0, left[b] * 0.56 + air + sizzle))
+            smooth[b] += (value - smooth[b]) * 0.34
         }
 
-        if step >= columns { history.append(left) }
-    }
-
-    return history
-}
-
-func contrastStretched(_ history: [[Double]]) -> [[Double]] {
-    let levels = history.flatMap { $0 }.sorted()
-    let ceiling = max(0.08, levels[Int(Double(levels.count - 1) * 0.985)])
-    let floor = levels[Int(Double(levels.count - 1) * 0.30)]
-    let span = max(0.04, ceiling - floor)
-    return history.map { $0.map { max(0, min(1, ($0 - floor) / span)) } }
-}
-
-func spectrogramImage(_ history: [[Double]]) -> CGImage {
-    guard
-        let context = CGContext(
-            data: nil, width: columns, height: bands, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-    else { fatalError("could not create the spectrogram context") }
-
-    guard let pixels = context.data else { fatalError("no spectrogram backing store") }
-    let buffer = pixels.bindMemory(to: UInt8.self, capacity: context.bytesPerRow * bands)
-
-    for x in 0..<columns {
-        let column = history[x]
-        for y in 0..<bands {
-            let rgb = magma(column[y])
-            let offset = (bands - 1 - y) * context.bytesPerRow + x * 4
-            buffer[offset] = UInt8(max(0, min(255, rgb.x * 255)))
-            buffer[offset + 1] = UInt8(max(0, min(255, rgb.y * 255)))
-            buffer[offset + 2] = UInt8(max(0, min(255, rgb.z * 255)))
-            buffer[offset + 3] = 255
+        for i in 0..<barCount {
+            let b = min(bands - 1, Int(Double(i) / Double(barCount) * Double(bands)))
+            let level = min(1, smooth[b] * fixedGain)
+            peaks[i] = max(level, peaks[i] - 0.012)
         }
     }
 
-    guard let image = context.makeImage() else { fatalError("could not read the spectrogram") }
-    return image
+    let levels = (0..<barCount).map { i -> Double in
+        let b = min(bands - 1, Int(Double(i) / Double(barCount) * Double(bands)))
+        return min(1, smooth[b] * fixedGain)
+    }
+    return (levels, peaks)
 }
 
-func draw(_ text: String, at point: CGPoint, font: NSFont, color: NSColor, tracking: CGFloat) {
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: font,
-        .foregroundColor: color,
-        .kern: tracking,
-    ]
-    NSAttributedString(string: text, attributes: attributes).draw(at: point)
+func drawBars(in context: CGContext, rect: CGRect) {
+    let (levels, peaks) = settledBars()
+    let slot = rect.width / CGFloat(barCount)
+    let gap = slot * 0.18
+    let barWidth = max(1, slot - gap)
+    let capHeight = max(1, rect.height * 0.012)
+
+    for i in 0..<barCount {
+        let level = levels[i]
+        let barHeight = CGFloat(level) * rect.height * 0.94
+        let x = rect.minX + slot * CGFloat(i) + gap / 2
+
+        context.setFillColor(color(magma(0.32 + level * 0.68)))
+        context.fill(CGRect(x: x, y: rect.minY, width: barWidth, height: barHeight))
+
+        let capY = rect.minY + CGFloat(peaks[i]) * rect.height * 0.94
+        context.setFillColor(color(magma(0.95), 0.85))
+        context.fill(CGRect(x: x, y: capY, width: barWidth, height: capHeight))
+    }
+}
+
+func attributed(_ text: String, font: NSFont, color: NSColor, tracking: CGFloat)
+    -> NSAttributedString
+{
+    NSAttributedString(
+        string: text, attributes: [.font: font, .foregroundColor: color, .kern: tracking])
 }
 
 let canvasSize = CGSize(width: CGFloat(width), height: CGFloat(height))
@@ -176,7 +170,28 @@ canvas.drawRadialGradient(
     endRadius: canvasSize.width * 0.66, options: [])
 
 let margin: CGFloat = 78
-let stage = CGRect(x: margin, y: 74, width: canvasSize.width - margin * 2, height: 268)
+
+let eyebrow = attributed(
+    "LIVE SYSTEM AUDIO · MACOS · FREE AND OPEN SOURCE",
+    font: NSFont.monospacedSystemFont(ofSize: 20, weight: .medium),
+    color: NSColor(red: 0.988, green: 0.553, blue: 0.383, alpha: 0.94),
+    tracking: 2.5)
+let wordmark = attributed(
+    "Nowsee",
+    font: NSFont.systemFont(ofSize: 112, weight: .semibold),
+    color: NSColor(red: 0.937, green: 0.929, blue: 0.961, alpha: 1),
+    tracking: -4.0)
+let tagline = attributed(
+    "Draws whatever your Mac is playing, as it plays.",
+    font: NSFont.systemFont(ofSize: 36, weight: .regular),
+    color: NSColor(red: 0.62, green: 0.61, blue: 0.68, alpha: 1),
+    tracking: -0.4)
+
+let eyebrowY = canvasSize.height - 58 - eyebrow.size().height
+let wordmarkY = eyebrowY - 18 - wordmark.size().height
+let taglineY = wordmarkY - 2 - tagline.size().height
+let stage = CGRect(
+    x: margin, y: 72, width: canvasSize.width - margin * 2, height: taglineY - 36 - 72)
 
 canvas.saveGState()
 canvas.setShadow(
@@ -190,40 +205,24 @@ canvas.restoreGState()
 canvas.saveGState()
 canvas.addPath(CGPath(roundedRect: stage, cornerWidth: 16, cornerHeight: 16, transform: nil))
 canvas.clip()
-canvas.interpolationQuality = .high
-canvas.draw(spectrogramImage(contrastStretched(spectrogramHistory())), in: stage)
+drawBars(in: canvas, rect: stage)
 canvas.restoreGState()
 
 canvas.setStrokeColor(color(SIMD3(1, 1, 1), 0.1))
 canvas.setLineWidth(1)
 canvas.addPath(
-    CGPath(roundedRect: stage.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 16, cornerHeight: 16, transform: nil))
+    CGPath(
+        roundedRect: stage.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 16, cornerHeight: 16,
+        transform: nil))
 canvas.strokePath()
 
 let graphics = NSGraphicsContext(cgContext: canvas, flipped: false)
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = graphics
 
-draw(
-    "Nowsee",
-    at: CGPoint(x: margin, y: 434),
-    font: NSFont.systemFont(ofSize: 112, weight: .semibold),
-    color: NSColor(red: 0.937, green: 0.929, blue: 0.961, alpha: 1),
-    tracking: -4.0)
-
-draw(
-    "Draws whatever your Mac is playing, as it plays.",
-    at: CGPoint(x: margin + 4, y: 374),
-    font: NSFont.systemFont(ofSize: 36, weight: .regular),
-    color: NSColor(red: 0.62, green: 0.61, blue: 0.68, alpha: 1),
-    tracking: -0.4)
-
-draw(
-    "LIVE SYSTEM AUDIO · MACOS · FREE AND OPEN SOURCE",
-    at: CGPoint(x: margin + 5, y: 528),
-    font: NSFont.monospacedSystemFont(ofSize: 20, weight: .medium),
-    color: NSColor(red: 0.988, green: 0.553, blue: 0.383, alpha: 0.94),
-    tracking: 2.5)
+eyebrow.draw(at: CGPoint(x: margin + 5, y: eyebrowY))
+wordmark.draw(at: CGPoint(x: margin, y: wordmarkY))
+tagline.draw(at: CGPoint(x: margin + 4, y: taglineY))
 
 NSGraphicsContext.restoreGraphicsState()
 
