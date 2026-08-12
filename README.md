@@ -249,6 +249,9 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 the audio path, read [the engineering notes](docs/ENGINEERING.md) first; Core Audio taps fail
 silently in several ways that look like your bug and are not.
 
+Found something that breaks the privacy guarantees above? Report it privately — see
+[SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
