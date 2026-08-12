@@ -1,7 +1,10 @@
 import "./style.css";
+import { inject } from "@vercel/analytics";
 import { createSignal, HISTORY } from "./signal.js";
 import { PALETTES, buildLut } from "./palettes.js";
 import { MODES, createSurface, sizeSurface, paint } from "./renderers.js";
+
+inject();
 
 const FPS = 30;
 const BREW = "brew install --cask --no-quarantine sergio-prog/tap/nowsee";

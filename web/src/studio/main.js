@@ -1,9 +1,12 @@
 import "../style.css";
+import { inject } from "@vercel/analytics";
 import { PALETTES, buildLut, customStops } from "../palettes.js";
 import { createEngine } from "./audio.js";
 import { createControls } from "./controls.js";
 import { createScene, paint, shade, sizeScene } from "./render.js";
 import { DEFAULTS, GROUPS, MODES, RANDOMISABLE, SOURCES } from "./schema.js";
+
+inject();
 
 const STORE = "nowsee.studio.v1";
 const STRIP = {
