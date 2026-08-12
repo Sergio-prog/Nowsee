@@ -224,22 +224,6 @@ input[type="color"]::-webkit-color-swatch {
   transform: translateX(3px);
 }
 
-@keyframes pulse-dot {
-  50% {
-    opacity: 0.3;
-  }
-}
-
-.live-dot::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-  animation: pulse-dot 2.6s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
