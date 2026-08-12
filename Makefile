@@ -16,7 +16,7 @@ CASK := homebrew/nowsee.rb
 
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app check icon run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version
+.PHONY: cert app check icon og run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version
 
 check:
 	$(SWIFT) run -c $(CONFIG) nowsee-check
@@ -40,6 +40,9 @@ icon:
 	rm -rf "$(ICONSET)"
 	$(SWIFT) scripts/make-icon.swift "$(ICONSET)"
 	iconutil -c icns "$(ICONSET)" -o "$(ICNS)"
+
+og:
+	$(SWIFT) scripts/make-og.swift web/public/og.png
 
 app: icon
 	$(SWIFT) build -c $(CONFIG) --product Nowsee
