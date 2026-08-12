@@ -1,6 +1,6 @@
 cask "nowsee" do
   version "0.1.0"
-  sha256 "c4dbdcdfc3f449d71c48e239f1ee9273e61b0edb6ffdaa631b3134ddf5249b61"
+  sha256 "aacc2d5639f61c1131c0955710f0cd6a33d786fbf5257283be5505e61069283f"
 
   url "https://github.com/Sergio-prog/Nowsee/releases/download/v#{version}/Nowsee-#{version}.zip",
       verified: "github.com/Sergio-prog/Nowsee/"
@@ -13,7 +13,7 @@ cask "nowsee" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "Nowsee.app"
 
