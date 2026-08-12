@@ -41,12 +41,6 @@
       class="sticky top-0 z-20 flex h-[26px] items-center gap-[18px] border-b border-hairline bg-[#0c0b13]/72 px-3 text-[12.5px] backdrop-blur-xl backdrop-saturate-150"
     >
       <span class="font-bold tracking-tight">Nowsee</span>
-      <nav class="hidden gap-[17px] text-ink/72 sm:flex" aria-label="Main">
-        <a href="#stage" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Visualizations</a>
-        <a href="/studio/" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Studio</a>
-        <a href="#install" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Install</a>
-        <a href="https://github.com/Sergio-prog/Nowsee" class="-mx-[5px] rounded px-[5px] py-0.5 transition-colors hover:bg-white/10 hover:text-ink">Source</a>
-      </nav>
       <div class="ml-auto flex items-center gap-[13px]">
         <canvas id="strip" class="block h-[18px] w-[76px]" width="152" height="36" aria-hidden="true"></canvas>
         <span id="clock" class="font-mono text-[11.5px] tabular-nums tracking-tight text-ink/82">--:--</span>
@@ -57,7 +51,6 @@
       class="relative z-10 mx-auto flex w-full max-w-[940px] flex-1 flex-col justify-center gap-[clamp(16px,2.6vh,28px)] px-6 pt-[clamp(18px,3.2vh,38px)] pb-[clamp(16px,2.4vh,26px)]"
     >
       <header>
-        <p class="label-mono mb-3.5 tracking-[0.17em] text-dimmer">Live system audio · macOS</p>
         <h1
           class="max-w-[19ch] text-[clamp(1.85rem,4.1vw,2.95rem)] leading-[1.05] font-semibold tracking-[-0.036em] text-dim"
         >
@@ -88,27 +81,11 @@
             >Live</span
           >
         </div>
-
-        <p class="mt-2.5 font-mono text-[11px] leading-normal text-dimmer">
-          Running the same synthetic signal Nowsee uses to preview its own settings in a quiet
-          room. Pick a mode and the strip in the menu bar above changes with it.
-        </p>
       </section>
 
       <section class="flex flex-wrap items-center gap-x-6 gap-y-2.5" aria-label="Demo controls">
-        <div class="flex flex-wrap items-center gap-2.5">
-          <span class="label-mono text-dimmer" id="modeLabel">Mode</span>
-          <div class="flex flex-wrap gap-[5px]" role="group" aria-labelledby="modeLabel" id="modes"></div>
-        </div>
-        <div class="flex flex-wrap items-center gap-2.5">
-          <span class="label-mono text-dimmer" id="paletteLabel">Palette</span>
-          <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="paletteLabel" id="palettes"></div>
-        </div>
-        <a
-          href="/studio/"
-          class="font-mono text-[11px] text-dimmer transition-colors hover:text-ink sm:ml-auto"
-          >Every knob, and your own audio → studio</a
-        >
+        <div class="flex flex-wrap gap-[5px]" role="group" aria-label="Visualization" id="modes"></div>
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Palette" id="palettes"></div>
       </section>
 
       <section id="install" class="flex flex-wrap items-center gap-3" aria-label="Install">
@@ -133,7 +110,6 @@
       </section>
 
       <p class="font-mono text-[11px] leading-relaxed text-dimmer">
-        macOS 15 or later. Signed but not notarized — right-click → Open on first launch.<br />
         Nowsee asks to record system audio. Nothing is written to disk, nothing leaves your Mac,
         and the microphone is never touched.
       </p>
@@ -142,9 +118,7 @@
     <footer
       class="relative z-10 flex flex-wrap items-center gap-x-[22px] gap-y-2 border-t border-hairline px-6 py-[13px] font-mono text-[11px] text-dimmer"
     >
-      <span>MIT licensed</span>
       <a href="https://github.com/Sergio-prog/Nowsee" class="transition-colors hover:text-ink">GitHub</a>
-      <a href="https://github.com/Sergio-prog/Nowsee/blob/main/docs/ENGINEERING.md" class="transition-colors hover:text-ink">Engineering notes</a>
       <a href="https://github.com/Sergio-prog/Nowsee/blob/main/ROADMAP.md" class="transition-colors hover:text-ink">Roadmap</a>
       <span class="ml-auto">Inspired by <a href="https://songsee.sh/" class="transition-colors hover:text-ink">songsee</a></span>
     </footer>
