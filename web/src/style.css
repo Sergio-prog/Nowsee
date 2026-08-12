@@ -158,6 +158,34 @@ input[type="color"]::-webkit-color-swatch {
   border-radius: 2px;
 }
 
+.wordmark {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-magma-5) 0%,
+    var(--color-magma-4) 14%,
+    var(--color-magma-3) 26%,
+    var(--color-magma-2) 38%,
+    var(--color-magma-3) 52%,
+    var(--color-magma-4) 66%,
+    var(--color-magma-5) 82%
+  );
+  background-size: 260% 100%;
+  background-position: 128% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: var(--color-ink);
+  transition:
+    background-position 0.62s var(--ease-out-quart),
+    color 0.22s var(--ease-out-quart),
+    text-shadow 0.42s var(--ease-out-quart);
+}
+
+.wordmark:hover {
+  background-position: -22% 0;
+  color: transparent;
+  text-shadow: 0 0 34px rgba(252, 141, 98, 0.38);
+}
+
 .studio-cta {
   display: inline-flex;
   align-items: center;
