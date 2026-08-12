@@ -4,7 +4,7 @@ import { PALETTES, buildLut } from "./palettes.js";
 import { MODES, createSurface, sizeSurface, paint } from "./renderers.js";
 
 const FPS = 30;
-const BREW = "brew install --cask nowsee";
+const BREW = "brew install --cask --no-quarantine sergio-prog/tap/nowsee";
 
 const signal = createSignal();
 let mode = MODES[0].id;
