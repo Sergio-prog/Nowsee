@@ -243,7 +243,9 @@ final class StripVisualizationView: NSView {
         let now = CACurrentMediaTime()
         guard now - lastRedraw >= redrawInterval * redrawTolerance else { return }
         lastRedraw = now
-        needsDisplay = true
+        if state == .active {
+            needsDisplay = true
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {

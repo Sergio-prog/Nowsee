@@ -54,16 +54,17 @@ pointing at a device that no longer exists. `AudioDeviceStop` and `AudioHardware
 then block *forever* rather than returning an error, which hangs the process during teardown and
 blocks all other playback on the machine (`afplay` fails with `AudioQueueStart failed (-66681)`).
 
-Three defences, all now in place:
+Defences now in place:
 
 - `SystemAudioTap` listens on `kAudioHardwarePropertyDefaultOutputDevice` and rebuilds the whole
   tap/aggregate chain when the default output changes, so it never holds a stale device.
-- It also listens on the current output device for `kAudioDevicePropertyDeviceHasChanged`,
-  `NominalSampleRate`, `DeviceIsAlive` and `StreamFormat`. Bluetooth devices renegotiate their format
-  on their own schedule — changing AirPods volume can do it — and the tap goes silent until the chain
-  is rebuilt. Rebuilds are debounced 0.35 s so a burst of notifications costs one rebuild, and all
-  chain mutation is serialized on `controlQueue`. `NOWSEE_SELFTEST=reconfigure` forces rebuilds on a
-  timer to exercise the path without touching real hardware.
+- It also listens on the current output device for `NominalSampleRate`, `DeviceIsAlive`,
+  `StreamFormat` and `StreamConfiguration`. Bluetooth devices renegotiate these on their own
+  schedule, and the tap goes silent until the chain is rebuilt. The broad
+  `kAudioDevicePropertyDeviceHasChanged` notification is deliberately not observed: volume changes
+  can fire it even when the capture format is unchanged, causing an unnecessary interruption.
+  Rebuilds are debounced 0.35 s, retried when a Bluetooth device is not settled yet, and serialized
+  on `controlQueue`. `NOWSEE_SELFTEST=reconfigure` forces rebuilds on a timer.
 - Teardown is idempotent and ordered: stop the IOProc, destroy the IOProc, destroy the aggregate,
   destroy the tap.
 - The probe arms a 3-second watchdog before teardown and `_exit`s if it overruns, so a blocked
@@ -127,9 +128,9 @@ pass, since subview counts are still zero immediately after `makeKeyAndOrderFron
 Command Line Tools installed, so the shader lives in a Swift string and there is no `.metallib`
 build step.
 
-**Decouple the menu bar redraw from the hop rate.** Columns arrive ~94/sec; a 72×22 pt strip does not
-need that. It coalesces to the chosen frame rate and reuses one pixel buffer. The Metal view also
-pauses when its window is closed or minimised.
+**Decouple the menu bar redraw from the hop rate.** Spectrogram columns arrive ~47/sec; a 72×22 pt
+strip does not need that. It coalesces to the chosen frame rate and reuses one pixel buffer. The
+Metal view also pauses when its window is closed or minimised.
 
 **A frame rate setting that cannot be reached is worse than no setting.** The picker offered 120 fps
 on a 60 Hz panel, so 60 and 120 rendered identically and the control felt broken. Worse, the menu bar
@@ -139,14 +140,13 @@ rate, and the strip follows the setting. Measured cost of un-clamping the strip:
 versus 9.4% at 60.
 
 **Idling properly is what makes it an always-on app.** Rendering an unchanging image at 30 fps and
-running 94 FFTs/sec on digital silence costs ~8% CPU for nothing. Two fixes take idle to ~0.2%:
-`SpectrumAnalyzer` skips the FFT entirely when a hop is all zeros, and the Metal view pauses once
-the *whole visible history* has scrolled to silence — not merely when the current hop is quiet, or
-it would freeze mid-scroll leaving a stale half-drawn image.
+running FFTs on digital silence costs CPU for nothing. The analyzer skips FFT work on zeroed hops,
+the strip ignores silent updates once it reaches idle, and the Metal view pauses after its visible
+history has cleared.
 
-Measured: ~10% CPU with audio playing and the window open at 30 fps, ~0.2% idle, 30 MB resident.
-See the frame-rate findings below for the full breakdown — the menu bar strip, not the window,
-turned out to dominate.
+The Metal renderer and its window are created lazily, updated only while visible, and released on
+close. Settings follows the same lifecycle. This matters more for resident memory than tuning the
+small ring buffers does.
 
 **"Static" means frequency on X, not a cleverer time window.** The first attempt at Stereo and Morph
 put time on X and tried to hold the picture still with a zero-crossing trigger. It still scrolled,
@@ -271,20 +271,22 @@ how often the strip redraws, not how fast it draws.
 Window size barely matters, which confirms it: 900x320 and 1600x900 cost 13.7% and 14.1%. That part
 is GPU-bound, not CPU-bound.
 
-The menu bar strip therefore has its own frame rate now, separate from the window's. Measured with a
-synthetic signal, window at 60 fps:
+The menu bar strip therefore has its own frame rate, separate from the window's. This was the
+original baseline measured with a synthetic signal before lazy window resources and reduced DSP
+cadence were added:
 
 | | strip 15 | strip 30 | strip 60 |
 |---|---|---|---|
 | Window closed | 4.5% | 7.3% | 11.5% |
 | Window open | 9.6% | 13.7% | ~18% |
 
-**Settings open is the expensive state, and it is the one people measure in.** A report of "30% at
+**Settings used to be the expensive state, and it is the one people measure in.** A report of "30% at
 60 fps" turned out to be 29.0% measured with the settings window open — which is exactly where
 someone goes to compare frame rates, so it is the state they see. Two live preview strips redrawing
 is most of it, one of them 416x96. Capping preview redraws at 24 fps took that to 21.9%, and the
-steady state with settings closed is 12.5%. The lesson is to always record which windows were open
-alongside a CPU number; without that the number means nothing.
+steady state with settings closed was 12.5%. Settings now mounts only the selected page's preview,
+and mounts no preview on General. The lesson is to always record which windows were open alongside
+a CPU number; without that the number means nothing.
 
 **A per-frame smoothing coefficient is a latency bug wearing a smoothing hat.** Attack and release
 were applied once per emitted frame, so halving the frame rate doubled the response time in

@@ -2,6 +2,7 @@ import Accelerate
 import AudioToolbox
 import CoreAudio
 import Foundation
+import Synchronization
 
 public final class SystemAudioTap {
     public struct StreamInfo {
@@ -36,6 +37,8 @@ public final class SystemAudioTap {
     private var deviceListeners: [InstalledListener] = []
     private var pendingRebuild: DispatchWorkItem?
     private let rebuildDebounce = 0.35
+    private let rebuildRetryDelay = 0.75
+    private let maximumRebuildAttempts = 6
     private let settleWindow = 0.5
     private var lastRebuildFinished: CFAbsoluteTime = 0
     private var reconfigureCount = 0
@@ -48,6 +51,7 @@ public final class SystemAudioTap {
     private var leftChannel: UnsafeMutablePointer<Float>
     private var rightChannel: UnsafeMutablePointer<Float>
     private var handler: MonoHandler?
+    private let channelNeeds = Atomic<UInt8>(3)
 
     public init() {
         mixdown = .allocate(capacity: channelCapacity)
@@ -69,8 +73,16 @@ public final class SystemAudioTap {
 
     public func start(onMonoAudio: @escaping MonoHandler) throws {
         handler = onMonoAudio
-        try controlQueue.sync { try buildChain() }
+        try controlQueue.sync {
+            try buildChain()
+            lastRebuildFinished = CFAbsoluteTimeGetCurrent()
+        }
         installSystemListeners()
+    }
+
+    public func setChannelNeeds(mono: Bool, stereo: Bool) {
+        let value: UInt8 = (mono ? 1 : 0) | (stereo ? 2 : 0)
+        channelNeeds.store(value, ordering: .relaxed)
     }
 
     public func stop() {
@@ -216,9 +228,6 @@ public final class SystemAudioTap {
 
     private func installDeviceListeners(_ deviceID: AudioDeviceID) {
         listen(
-            deviceID, kAudioDevicePropertyDeviceHasChanged, reason: "device reconfigured",
-            into: &deviceListeners)
-        listen(
             deviceID, kAudioDevicePropertyNominalSampleRate, reason: "sample rate changed",
             into: &deviceListeners)
         listen(
@@ -227,30 +236,47 @@ public final class SystemAudioTap {
         listen(
             deviceID, kAudioDevicePropertyStreamFormat, scope: kAudioObjectPropertyScopeOutput,
             reason: "stream format changed", into: &deviceListeners)
+        listen(
+            deviceID, kAudioDevicePropertyStreamConfiguration,
+            scope: kAudioObjectPropertyScopeOutput,
+            reason: "stream configuration changed", into: &deviceListeners)
     }
 
     private func scheduleRebuild(_ reason: String) {
         guard CFAbsoluteTimeGetCurrent() - lastRebuildFinished > settleWindow else { return }
-        pendingRebuild?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            self?.rebuildChain(reason)
-        }
-        pendingRebuild = item
-        controlQueue.asyncAfter(deadline: .now() + rebuildDebounce, execute: item)
+        enqueueRebuild(reason, attempt: 0, delay: rebuildDebounce)
     }
 
-    private func rebuildChain(_ reason: String) {
+    private func enqueueRebuild(_ reason: String, attempt: Int, delay: TimeInterval) {
+        pendingRebuild?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.rebuildChain(reason, attempt: attempt)
+        }
+        pendingRebuild = item
+        controlQueue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func rebuildChain(_ reason: String, attempt: Int) {
         guard handler != nil else { return }
+        pendingRebuild = nil
         teardownChain()
         do {
             try buildChain()
             reconfigureCount += 1
             onReconfigure?("\(reason) — recovered after \(reconfigureCount)")
+            lastRebuildFinished = CFAbsoluteTimeGetCurrent()
+            onOutputDeviceChange?(streamInfo)
         } catch {
-            onReconfigure?("\(reason) — rebuild failed: \(error)")
+            let nextAttempt = attempt + 1
+            if nextAttempt < maximumRebuildAttempts, handler != nil {
+                onReconfigure?(
+                    "\(reason) — retrying (\(nextAttempt)/\(maximumRebuildAttempts)): \(error)")
+                enqueueRebuild(reason, attempt: nextAttempt, delay: rebuildRetryDelay)
+            } else {
+                onReconfigure?("\(reason) — rebuild failed: \(error)")
+                onOutputDeviceChange?(nil)
+            }
         }
-        lastRebuildFinished = CFAbsoluteTimeGetCurrent()
-        onOutputDeviceChange?(streamInfo)
     }
 
     private func tapStreamFormat() throws -> AudioStreamBasicDescription {
@@ -264,6 +290,8 @@ public final class SystemAudioTap {
 
     private func consume(_ bufferList: UnsafePointer<AudioBufferList>) {
         guard let handler else { return }
+        let needs = channelNeeds.load(ordering: .relaxed)
+        guard needs != 0 else { return }
         let buffers = UnsafeMutableAudioBufferListPointer(
             UnsafeMutablePointer(mutating: bufferList)
         )
@@ -274,12 +302,16 @@ public final class SystemAudioTap {
             buffers.count > 1 ? splitDeinterleaved(buffers) : splitInterleaved(buffers[0])
         guard frames > 0 else { return }
 
-        onStereoAudio?(leftChannel, rightChannel, frames)
+        if needs & 2 != 0 {
+            onStereoAudio?(leftChannel, rightChannel, frames)
+        }
 
-        var half: Float = 0.5
-        vDSP_vadd(leftChannel, 1, rightChannel, 1, mixdown, 1, vDSP_Length(frames))
-        vDSP_vsmul(mixdown, 1, &half, mixdown, 1, vDSP_Length(frames))
-        handler(mixdown, frames)
+        if needs & 1 != 0 {
+            var half: Float = 0.5
+            vDSP_vadd(leftChannel, 1, rightChannel, 1, mixdown, 1, vDSP_Length(frames))
+            vDSP_vsmul(mixdown, 1, &half, mixdown, 1, vDSP_Length(frames))
+            handler(mixdown, frames)
+        }
     }
 
     private func splitInterleaved(_ buffer: AudioBuffer) -> Int {

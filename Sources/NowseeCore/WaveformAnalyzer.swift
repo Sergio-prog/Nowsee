@@ -8,7 +8,7 @@ public final class WaveformAnalyzer {
     private var frame: UnsafeMutablePointer<Float>
     private var nextHopEnd: UInt64 = 0
 
-    public init(ring: AudioRingBuffer, hopSize: Int = 256) {
+    public init(ring: AudioRingBuffer, hopSize: Int = 512) {
         self.ring = ring
         self.hopSize = hopSize
         frame = .allocate(capacity: hopSize)

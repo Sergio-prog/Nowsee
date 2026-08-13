@@ -41,7 +41,9 @@ final class PreviewSignal {
     }
 
     func applySettings() {
-        if driver != nil, NowseeSettings.shared.mockPreview {
+        if driver != nil, NowseeSettings.shared.mockPreview,
+            StripRegistry.shared.hasPreviewStrips
+        {
             startLink()
         } else {
             stopLink()

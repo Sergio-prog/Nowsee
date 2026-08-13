@@ -19,7 +19,9 @@ Nowsee taps the system audio output and draws it in real time. It works with any
 sound — Spotify, YouTube, a video call, a game — because it reads the output mix rather than
 integrating with any particular app.
 
-It lives in the menu bar. There is no dock icon, no window on launch, and no account.
+It lives in the menu bar. There is no dock icon, no window on launch, and no account. Settings and
+the visualizer focus normally when opened from the menu-bar item, while Nowsee remains an accessory
+and does not replace the foreground app in Dock or the app switcher.
 
 Inspired by [songsee](https://songsee.sh/), which renders spectrograms from audio *files*.
 Nowsee does it continuously, from whatever is playing right now.
@@ -96,9 +98,14 @@ That costs about 1.5% CPU, which is why `Off` is a first-class option rather tha
 Launching does not open the visualizer window. It is there when you want it, from **Show
 Visualizer** (⌘S) or by launching the app again.
 
+The visualizer opens with the standard window frame and its resize, minimise and full-screen
+controls. Press **⌘⇧F** to hide or restore the frame. **⌃⌘F** and **⌘W** retain their standard macOS
+full-screen and close behavior; only the frame toggle is duplicated in Nowsee's menu-bar menu.
+
 ## Settings
 
-**Settings…** (⌘,) opens a window with a live preview of both surfaces. Everything persists.
+**Settings…** (⌘,) opens a focused General, Visualizer, or Menu Bar page. The visual pages each
+show the relevant live preview, and everything persists.
 
 When nothing is playing, the previews fall back to a synthetic signal — a drifting four-band contour
 shaped like music, generated numerically and never sent to an output device. Without it the previews
@@ -109,11 +116,12 @@ cannot.
 
 | Setting | Options | Default |
 |---|---|---|
+| Launch when you log in | on / off | off |
 | Visualization | Spectrogram, Waveform, Ocean, Bars, Stereo, Morph | Spectrogram |
 | Sensitivity | 1–30× (every mode except Spectrogram) | 4× |
 | Smoothing | 0–100% (Bars, Stereo, Morph, Ocean) | 55% |
 | Animate preview when quiet | on / off | on |
-| Standby animation | Off, Breathe, Wave, Sweep | Breathe |
+| Standby animation | Off, Breathe, Wave, Sweep | Off |
 | Standby intensity | 0–100% | 60% |
 | Baseline matches system | on / off | on |
 | Baseline colour | any colour, when not matching the system | white |
@@ -123,7 +131,7 @@ cannot.
 | Palette | ten built-ins plus Custom | Magma |
 | Custom colours | low / mid / high stops | blue → green → white |
 | Frame rate | 15 / 30 / 60, capped to the display refresh rate | 30 |
-| Menu bar frame rate | 15 / 30 / 60, independent of the window | 30 |
+| Menu bar frame rate | 15 / 30 / 60, independent of the window | 15 |
 | Float above all windows | on / off | off |
 | Window background opacity | 0–100% | 100% |
 | Menu bar width | 40–220 pt | 72 pt |
@@ -133,20 +141,18 @@ cannot.
 
 ## Performance
 
-Measured on Apple silicon with a synthetic signal, release build. Idle is ~0.2% CPU and 30 MB
-resident; the app stops rendering entirely once the visible history has scrolled to silence.
+The app does not create Metal resources until the visualizer is opened, releases them again when it
+closes, and never uploads frames into a hidden or minimised window. It also captures only the mono
+or stereo data needed by the selected mode and analyses scrolling modes at half their original
+rate. Silence stops driving menu-bar redraws; standby animation is opt-in.
 
-| Playing audio, window at 60 fps | strip 15 fps | strip 30 fps | strip 60 fps |
-|---|---|---|---|
-| Window closed | 4.5% | 7.3% | 11.5% |
-| Window open | 9.6% | 13.7% | ~18% |
+The counterintuitive part: a 72×22 pt menu bar strip can cost more CPU than the 900×320 Metal
+window because the expensive part is asking macOS to redraw the status item, not filling its small
+pixel buffer. That is why the strip has its own frame rate and defaults to 15 fps. Use 30 fps when
+you prefer smoother movement.
 
-The counterintuitive part: a 72×22 pt menu bar strip costs more than the 900×320 Metal window,
-because the cost is per *redraw* and almost independent of size. That is why the strip has its own
-frame rate. If Nowsee feels expensive, lower the menu bar rate before the window rate.
-
-The **settings window is the expensive state** — two live previews redrawing puts it around 22%.
-It is also, inconveniently, where people go to compare frame rates. Close it before measuring.
+Settings keeps only the selected page's preview alive, so comparing options no longer runs both
+preview surfaces at once.
 
 Full details, and the bug where 30 fps was genuinely twice as laggy rather than merely choppier,
 are in the [engineering notes](docs/ENGINEERING.md).
@@ -158,7 +164,8 @@ Nowsee reads the system audio output mix so it can draw it. That is the entire d
 - Audio is turned into FFT magnitudes in memory and drawn. It is never written to disk.
 - Nothing is sent anywhere. The app makes no network requests of any kind.
 - The microphone is never accessed — that is a separate permission Nowsee does not request.
-- Settings live in `UserDefaults`. There is no account, no telemetry, no analytics.
+- Appearance settings live in `UserDefaults`; launch-at-login registration is managed by macOS.
+  There is no account, telemetry or analytics.
 
 ## Requirements
 
@@ -193,6 +200,8 @@ Environment flags:
 | `NOWSEE_DIAGNOSTICS=1` | Appends render stats to `~/Library/Logs/nowsee.log` every 2 s |
 | `NOWSEE_SELFTEST=signal` | Feeds a synthetic stereo tone into the ring buffers — drives every mode **without playing anything** |
 | `NOWSEE_SELFTEST=settings` | Opens the settings window after 2 s and logs its geometry |
+| `NOWSEE_SELFTEST=settings-close` | Opens then closes Settings to verify the app stays alive |
+| `NOWSEE_SELFTEST=window-controls` | Exercises frame toggling and visualizer closing |
 | `NOWSEE_SELFTEST=reconfigure` | Forces tap rebuilds on a timer, to exercise device-change handling |
 | `NOWSEE_WINDOW=1600x900` | Overrides the window's initial size, for measuring render cost against area |
 

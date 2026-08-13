@@ -163,7 +163,7 @@ final class NowseeSettings {
         let storedRate = defaults.integer(forKey: "frameRate")
         frameRate = Self.frameRateOptions.contains(storedRate) ? storedRate : 30
         let storedBarRate = defaults.integer(forKey: "menuBarFrameRate")
-        menuBarFrameRate = Self.frameRateOptions.contains(storedBarRate) ? storedBarRate : 30
+        menuBarFrameRate = Self.frameRateOptions.contains(storedBarRate) ? storedBarRate : 15
         customLow = Self.loadColor("customLow", defaults) ?? SIMD3(0.043, 0.055, 0.310)
         customMid = Self.loadColor("customMid", defaults) ?? SIMD3(0.180, 0.800, 0.451)
         customHigh = Self.loadColor("customHigh", defaults) ?? SIMD3(0.976, 0.980, 0.945)
@@ -177,7 +177,7 @@ final class NowseeSettings {
         equalizerBarCount = defaults.object(forKey: "equalizerBarCount") as? Double ?? 56
         equalizerBarGap = defaults.object(forKey: "equalizerBarGap") as? Double ?? 0.16
         mockPreview = defaults.object(forKey: "mockPreview") as? Bool ?? true
-        standby = StandbyAnimation(rawValue: defaults.string(forKey: "standby") ?? "") ?? .breathe
+        standby = StandbyAnimation(rawValue: defaults.string(forKey: "standby") ?? "") ?? .off
         standbyIntensity = defaults.object(forKey: "standbyIntensity") as? Double ?? 0.6
         baselineMatchesSystem = defaults.object(forKey: "baselineMatchesSystem") as? Bool ?? true
         baselineColor = Self.loadColor("baselineColor", defaults) ?? SIMD3(1, 1, 1)

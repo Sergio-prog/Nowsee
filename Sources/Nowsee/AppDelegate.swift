@@ -2,7 +2,33 @@ import AppKit
 import MetalKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+private final class VisualizerWindow: NSWindow {
+    var onToggleFrame: (() -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+
+        if key == "f", modifiers == [.command, .shift] {
+            onToggleFrame?()
+            return true
+        }
+        if key == "f", modifiers == [.command, .control] {
+            toggleFullScreen(nil)
+            return true
+        }
+        if key == "w", modifiers == .command {
+            performClose(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private let engine = AudioEngine()
     private let settings = NowseeSettings.shared
 
@@ -14,25 +40,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var statusMenuItem: NSMenuItem!
     private var pauseMenuItem: NSMenuItem!
+    private var frameMenuItem: NSMenuItem!
     private var isPaused = false
+    private var isVisualizerFramed = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ProcessInfo.processInfo.disableAutomaticTermination(
+            "Nowsee must keep capturing while its windows are closed")
         setUpStatusItem()
-        setUpWindow()
 
         engine.visualization = settings.visualization
         engine.onColumn = { [weak self] column in
-            self?.renderer?.append(column: column)
+            if self?.isVisualizerActive == true {
+                self?.renderer?.append(column: column)
+            }
             StripRegistry.shared.broadcast(column: column)
             self?.wakeRendererIfNeeded()
         }
         engine.onEnvelope = { [weak self] low, high in
-            self?.renderer?.append(low: low, high: high)
+            if self?.isVisualizerActive == true {
+                self?.renderer?.append(low: low, high: high)
+            }
             StripRegistry.shared.broadcast(low: low, high: high)
             self?.wakeRendererIfNeeded()
         }
         engine.onSpectrumBands = { [weak self] levels in
-            self?.renderer?.update(spectrum: levels)
+            if self?.isVisualizerActive == true {
+                self?.renderer?.update(spectrum: levels)
+            }
             StripRegistry.shared.broadcast(spectrum: levels)
             self?.wakeRendererIfNeeded()
         }
@@ -77,9 +112,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
-        if selfTests.contains("settings") {
+        if selfTests.contains("settings") || selfTests.contains("settings-close") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 self?.showSettings()
+            }
+        }
+        if selfTests.contains("settings-close") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.settingsWindow?.performClose(nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                self?.showSettings()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                self?.settingsWindow?.performClose(nil)
+            }
+        }
+        if selfTests.contains("window-controls") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.showWindow()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.toggleWindowFrame()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                self?.toggleWindowFrame()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                self?.window?.performClose(nil)
             }
         }
     }
@@ -88,8 +148,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         engine.stop()
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        showWindow()
+        if let settingsWindow, settingsWindow.isVisible {
+            settingsWindow.deminiaturize(nil)
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showWindow()
+        }
         return true
     }
 
@@ -98,6 +168,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             renderer?.hasScrolledToSilence == false
         else { return }
         metalView?.isPaused = false
+    }
+
+    private var isVisualizerActive: Bool {
+        window?.isVisible == true && window?.isMiniaturized == false
     }
 
     private func setUpStatusItem() {
@@ -118,6 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator())
         menu.addItem(
             NSMenuItem(title: "Show Visualizer", action: #selector(showWindow), keyEquivalent: "s"))
+        frameMenuItem = NSMenuItem(
+            title: "Hide Window Frame", action: #selector(toggleWindowFrame), keyEquivalent: "f")
+        frameMenuItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(frameMenuItem)
         pauseMenuItem = NSMenuItem(
             title: "Pause Capture", action: #selector(togglePause), keyEquivalent: "p")
         menu.addItem(pauseMenuItem)
@@ -129,10 +207,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for item in menu.items where item.action != nil {
             item.target = self
         }
+        menu.delegate = self
         statusItem.menu = menu
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        updateWindowMenuItems()
+    }
+
     private func setUpWindow() {
+        guard window == nil else { return }
         guard
             let renderer = SpectrogramRenderer(
                 rowCount: AudioEngine.rowCount, bandCount: AudioEngine.bandCount)
@@ -154,18 +238,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         view.layer?.isOpaque = false
         metalView = view
 
-        let window = NSWindow(
+        let window = VisualizerWindow(
             contentRect: view.frame,
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Nowsee"
         window.contentView = view
-        window.center()
         window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = false
+        window.minSize = NSSize(width: 320, height: 120)
+        if requested.count == 2 || !window.setFrameUsingName("NowseeVisualizer") {
+            window.center()
+        }
+        window.setFrameAutosaveName("NowseeVisualizer")
         window.delegate = self
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenPrimary]
+        window.onToggleFrame = { [weak self] in self?.toggleWindowFrame() }
         view.isPaused = true
         self.window = window
     }
@@ -176,7 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func applySettings() {
         engine.visualization = settings.visualization
-        engine.frameRate = settings.frameRate
+        updateProcessingRate()
         engine.smoothing = Float(settings.smoothing)
         renderer?.mode = settings.visualization
         renderer?.apply(palette: settings.palette)
@@ -221,32 +311,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showWindow() {
+        setUpWindow()
+        applySettings()
         metalView?.isPaused = false
+        window?.deminiaturize(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func toggleWindowFrame() {
+        if window?.isVisible != true {
+            showWindow()
+        }
+        guard let window else { return }
+        guard !window.styleMask.contains(.fullScreen) else { return }
+
+        isVisualizerFramed.toggle()
+        let masks: NSWindow.StyleMask = isVisualizerFramed
+            ? [.titled, .closable, .miniaturizable, .resizable]
+            : [.borderless, .closable, .resizable]
+        window.styleMask = masks
+        window.isMovableByWindowBackground = !isVisualizerFramed
+        window.title = "Nowsee"
+        window.makeKeyAndOrderFront(nil)
+        updateWindowMenuItems()
+    }
+
+    private func updateWindowMenuItems() {
+        frameMenuItem?.title = isVisualizerFramed ? "Hide Window Frame" : "Show Window Frame"
+        let isFullScreen = window?.styleMask.contains(.fullScreen) == true
+        frameMenuItem?.isEnabled = !isFullScreen
+    }
+
     @objc private func showSettings() {
         if settingsWindow == nil {
-            let contentSize = NSSize(width: 460, height: 640)
+            let contentSize = NSSize(width: 540, height: 620)
             let hosting = NSHostingController(rootView: SettingsView())
             hosting.preferredContentSize = contentSize
             hosting.view.frame = NSRect(origin: .zero, size: contentSize)
 
             let window = NSWindow(
                 contentRect: NSRect(origin: .zero, size: contentSize),
-                styleMask: [.titled, .closable, .miniaturizable],
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             window.contentViewController = hosting
-            window.title = "Nowsee Settings"
+            window.title = "Settings"
+            // AppKit still owns close-animation state during windowWillClose. Keep the
+            // window and its SwiftUI hosting tree alive so that state cannot outlive them.
             window.isReleasedWhenClosed = false
-            window.setContentSize(contentSize)
-            window.center()
+            window.minSize = NSSize(width: 500, height: 520)
+            if !window.setFrameUsingName("NowseeSettings") {
+                window.setContentSize(contentSize)
+                window.center()
+            }
+            window.setFrameAutosaveName("NowseeSettings")
             window.delegate = self
             settingsWindow = window
         }
+        Task { @MainActor in LaunchAtLoginController.shared.refresh() }
+        settingsWindow?.deminiaturize(nil)
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if let settingsWindow {
@@ -275,16 +400,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if closing === settingsWindow {
             PreviewSignal.shared.detach()
         }
-        guard closing === window else { return }
-        metalView?.isPaused = true
+        if closing === window {
+            metalView?.isPaused = true
+            updateProcessingRate()
+        }
     }
 
     func windowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
         metalView?.isPaused = true
+        updateProcessingRate()
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
         metalView?.isPaused = false
+        updateProcessingRate()
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
+        updateWindowMenuItems()
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
+        updateWindowMenuItems()
+    }
+
+    private func updateProcessingRate() {
+        let visualizerRate = window?.isVisible == true && window?.isMiniaturized == false
+            ? settings.frameRate : 0
+        engine.frameRate = max(settings.menuBarFrameRate, visualizerRate)
     }
 
     @objc private func togglePause() {

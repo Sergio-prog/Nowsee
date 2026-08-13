@@ -7,6 +7,7 @@ final class StripRegistry {
     private let strips = NSHashTable<StripVisualizationView>.weakObjects()
 
     var registeredCount: Int { strips.allObjects.count }
+    var hasPreviewStrips: Bool { strips.allObjects.contains(where: \.isPreview) }
 
     var activitySummary: String {
         let all = strips.allObjects
@@ -23,16 +24,20 @@ final class StripRegistry {
         applyCurrentSettings(to: strip)
     }
 
+    func unregister(_ strip: StripVisualizationView) {
+        strips.remove(strip)
+    }
+
     func broadcast(column: [Float]) {
         if (column.max() ?? 0) > 0.2 { PreviewSignal.shared.noteRealSignal() }
-        for strip in strips.allObjects {
+        for strip in activeStrips {
             strip.append(column: column)
         }
     }
 
     func broadcast(low: Float, high: Float) {
         if max(abs(low), abs(high)) > 0.002 { PreviewSignal.shared.noteRealSignal() }
-        for strip in strips.allObjects {
+        for strip in activeStrips {
             strip.append(low: low, high: high)
         }
     }
@@ -40,9 +45,13 @@ final class StripRegistry {
     func broadcast(spectrum: [SIMD4<Float>]) {
         let peak = spectrum.reduce(Float(0)) { max($0, max($1.x, $1.y)) }
         if peak > 0.01 { PreviewSignal.shared.noteRealSignal() }
-        for strip in strips.allObjects {
+        for strip in activeStrips {
             strip.update(spectrum: spectrum)
         }
+    }
+
+    private var activeStrips: [StripVisualizationView] {
+        strips.allObjects.filter { !$0.isPreview || PreviewSignal.shared.hasHost }
     }
 
     func withPreviewStrips(_ body: ([StripVisualizationView]) -> Void) {

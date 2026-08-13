@@ -23,7 +23,7 @@ public final class SpectrumAnalyzer {
         ring: AudioRingBuffer,
         sampleRate: Double,
         windowSize: Int = 2048,
-        hopSize: Int = 512,
+        hopSize: Int = 1024,
         rowCount: Int = 256
     ) {
         self.ring = ring

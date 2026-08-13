@@ -47,11 +47,10 @@ Roughly in the order they'd be worth doing.
 
 ### Features
 
-- **Launch at login**, via `SMAppService`. The obvious gap for a menu bar app.
 - **Per-application capture.** `CATapDescription` can tap one process instead of the whole output
   mix, so Nowsee could visualize only Spotify and ignore notification sounds.
-- **Floating panel.** A borderless, click-through, always-on-top window that sits over other
-  content as an ambient visualizer rather than a normal window.
+- **Click-through mode.** The visualizer is now borderless and can stay above other windows; an
+  optional click-through mode would make it a fully passive overlay.
 - **Notch mode.** Draw into the empty space either side of the camera housing on notched
   MacBooks — much more room than the menu bar strip, and otherwise wasted.
 - **Freeze and export.** Pause the scroll, look at what just went past, save it as a PNG. This is

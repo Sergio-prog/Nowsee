@@ -19,7 +19,17 @@ final class AudioEngine {
     private var synthetic: DispatchSourceTimer?
     private var lastScopeEmit: CFTimeInterval = 0
 
-    var visualization: Visualization = .spectrogram
+    var visualization: Visualization = .spectrogram {
+        didSet {
+            guard visualization.source != oldValue.source else { return }
+            configureCaptureMode()
+            if isRunning {
+                rebuildAnalyzers()
+            } else if synthetic != nil {
+                rebuildSyntheticAnalyzer()
+            }
+        }
+    }
     var frameRate = 30
     var smoothing: Float = 0.55 { didSet { stereoSpectrum?.smoothing = smoothing } }
     var onColumn: (([Float]) -> Void)?
@@ -31,6 +41,8 @@ final class AudioEngine {
     private(set) var isRunning = false
 
     func start() {
+        guard !isRunning else { return }
+        configureCaptureMode()
         tap.onStereoAudio = { [weak self] left, right, count in
             self?.leftRing.write(left, count)
             self?.rightRing.write(right, count)
@@ -41,6 +53,7 @@ final class AudioEngine {
                 self?.ring.write(samples, count)
             }
         } catch {
+            tap.stop()
             onStatus?("Capture failed — \(error)")
             return
         }
@@ -49,7 +62,12 @@ final class AudioEngine {
             DispatchQueue.main.async { self?.rebuildAnalyzers() }
         }
         tap.onReconfigure = { [weak self] reason in
-            DispatchQueue.main.async { self?.onReconfigure?(reason) }
+            DispatchQueue.main.async {
+                self?.onReconfigure?(reason)
+                if reason.contains("retrying") {
+                    self?.onStatus?("Reconnecting audio…")
+                }
+            }
         }
         rebuildAnalyzers()
         startDrainTimer()
@@ -68,19 +86,34 @@ final class AudioEngine {
             onStatus?("No output device")
             return
         }
-        spectrum = SpectrumAnalyzer(
-            ring: ring, sampleRate: info.sampleRate, rowCount: Self.rowCount)
-        waveform = WaveformAnalyzer(ring: ring)
-        stereoSpectrum = StereoSpectrumAnalyzer(
-            left: leftRing, right: rightRing, sampleRate: info.sampleRate,
-            bandCount: Self.bandCount)
-        stereoSpectrum?.smoothing = smoothing
+        spectrum = nil
+        waveform = nil
+        stereoSpectrum = nil
+        switch visualization.source {
+        case .spectrum:
+            spectrum = SpectrumAnalyzer(
+                ring: ring, sampleRate: info.sampleRate, rowCount: Self.rowCount)
+        case .envelope:
+            waveform = WaveformAnalyzer(ring: ring)
+        case .stereoSpectrum:
+            stereoSpectrum = StereoSpectrumAnalyzer(
+                left: leftRing, right: rightRing, sampleRate: info.sampleRate,
+                bandCount: Self.bandCount)
+            stereoSpectrum?.smoothing = smoothing
+        }
         onStatus?("\(info.outputDeviceName) · \(Int(info.sampleRate / 1000)) kHz")
+    }
+
+    private func configureCaptureMode() {
+        tap.setChannelNeeds(
+            mono: visualization.source != .stereoSpectrum,
+            stereo: visualization.source == .stereoSpectrum)
     }
 
     private func startDrainTimer() {
         let source = DispatchSource.makeTimerSource(queue: .main)
-        source.schedule(deadline: .now(), repeating: Self.drainTick)
+        source.schedule(
+            deadline: .now(), repeating: Self.drainTick, leeway: .milliseconds(4))
         source.setEventHandler { [weak self] in
             guard let self else { return }
             switch self.visualization.source {
@@ -122,13 +155,36 @@ final class AudioEngine {
         source.resume()
         synthetic = source
 
-        if stereoSpectrum == nil {
-            stereoSpectrum = StereoSpectrumAnalyzer(
-                left: leftRing, right: rightRing, sampleRate: 48000, bandCount: Self.bandCount)
-            stereoSpectrum?.smoothing = smoothing
-            waveform = WaveformAnalyzer(ring: ring)
-            spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
+        if activeAnalyzerMissing {
+            rebuildSyntheticAnalyzer()
+        }
+        if timer == nil {
             startDrainTimer()
+        }
+    }
+
+    private var activeAnalyzerMissing: Bool {
+        switch visualization.source {
+        case .spectrum: return spectrum == nil
+        case .envelope: return waveform == nil
+        case .stereoSpectrum: return stereoSpectrum == nil
+        }
+    }
+
+    private func rebuildSyntheticAnalyzer() {
+        spectrum = nil
+        waveform = nil
+        stereoSpectrum = nil
+        switch visualization.source {
+        case .spectrum:
+            spectrum = SpectrumAnalyzer(ring: ring, sampleRate: 48000, rowCount: Self.rowCount)
+        case .envelope:
+            waveform = WaveformAnalyzer(ring: ring)
+        case .stereoSpectrum:
+            stereoSpectrum = StereoSpectrumAnalyzer(
+                left: leftRing, right: rightRing, sampleRate: 48000,
+                bandCount: Self.bandCount)
+            stereoSpectrum?.smoothing = smoothing
         }
     }
 

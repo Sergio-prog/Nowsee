@@ -10,13 +10,17 @@ APP := dist/Nowsee.app
 ICONSET := dist/Nowsee.iconset
 ICNS := dist/Nowsee.icns
 
-VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Sources/Nowsee/Info.plist)
-ZIP := dist/Nowsee-$(VERSION).zip
+VERSION = $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Sources/Nowsee/Info.plist)
+ZIP = dist/Nowsee-$(VERSION).zip
 CASK := homebrew/nowsee.rb
 
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app check icon og run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version
+.PHONY: cert app check icon og run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version verify-sources
+
+verify-sources:
+	@test -f Sources/Nowsee/Info.plist || { echo "error: tracked Sources/Nowsee/Info.plist is missing; restore it with: git restore Sources/Nowsee/Info.plist"; exit 1; }
+	@test -f scripts/make-icon.swift || { echo "error: tracked scripts/make-icon.swift is missing; restore it with: git restore scripts/make-icon.swift"; exit 1; }
 
 check:
 	$(SWIFT) run -c $(CONFIG) nowsee-check
@@ -35,7 +39,7 @@ uninstall:
 cert:
 	./scripts/make-cert.sh "$(SIGN_NAME)"
 
-icon:
+icon: verify-sources
 	@mkdir -p dist
 	rm -rf "$(ICONSET)"
 	$(SWIFT) scripts/make-icon.swift "$(ICONSET)"
@@ -44,7 +48,7 @@ icon:
 og:
 	$(SWIFT) scripts/make-og.swift web/public/og.png
 
-app: icon
+app: verify-sources icon
 	$(SWIFT) build -c $(CONFIG) --product Nowsee
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
@@ -55,7 +59,7 @@ app: icon
 	@codesign -dv "$(APP)" 2>&1 | grep -E 'Identifier|Signature' || true
 
 run-app: app
-	pkill -INT -f dist/Nowsee.app/Contents/MacOS/Nowsee || true
+	@pkill -INT -f "Nowsee.app/Contents/MacOS/Nowsee" 2>/dev/null || true
 	open "$(APP)"
 
 probe:
