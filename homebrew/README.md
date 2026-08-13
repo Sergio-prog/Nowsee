@@ -23,19 +23,15 @@ mkdir -p ../homebrew-tap/Casks
 make release
 ```
 
-That runs the checks, builds and signs the app, zips it, rewrites `version` and `sha256` in this
-cask, and prints the two commands to finish with:
-
-```sh
-gh release create v0.1.0 dist/Nowsee-0.1.0.zip --title v0.1.0 --generate-notes
-cp homebrew/nowsee.rb ../homebrew-tap/Casks/nowsee.rb
-```
+That runs the checks, builds and signs the app, creates the ZIP and DMG, rewrites `version` and
+`sha256` in this cask, and prints the commands needed to finish the release.
 
 Then commit the tap. Verify before announcing it:
 
 ```sh
 brew untap Sergio-prog/tap 2>/dev/null
 brew tap Sergio-prog/tap
+brew trust --cask Sergio-prog/tap/nowsee
 brew audit --cask --online Sergio-prog/tap/nowsee
 brew install --cask --no-quarantine nowsee
 ```
@@ -54,6 +50,7 @@ Notarizing removes the need for either, and needs a paid Apple Developer account
 
 ## The official homebrew-cask repository
 
-Not yet. It expects a project with some traction and a stable release history, and it rejects
-software that is not notarized in most cases. A personal tap has neither requirement, and the
-install command is barely longer.
+Third-party taps cannot mark themselves as globally trusted. To remove the per-user trust step,
+Nowsee must be accepted into `Homebrew/homebrew-cask`. Before submitting it, sign the app with an
+Apple Developer ID and notarize it so installation no longer needs `--no-quarantine`; official
+casks cannot require users to bypass Gatekeeper.

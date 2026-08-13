@@ -7,7 +7,11 @@ import { MODES, createSurface, sizeSurface, paint } from "./renderers.js";
 inject();
 
 const FPS = 30;
-const BREW = "brew install --cask --no-quarantine sergio-prog/tap/nowsee";
+const BREW = [
+  "brew tap sergio-prog/tap",
+  "brew trust --cask sergio-prog/tap/nowsee",
+  "brew install --cask --no-quarantine nowsee",
+].join("\n");
 
 const signal = createSignal();
 let mode = MODES[0].id;

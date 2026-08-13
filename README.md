@@ -31,9 +31,13 @@ Nowsee does it continuously, from whatever is playing right now.
 ### Homebrew
 
 ```sh
-brew tap Sergio-prog/tap
-brew install --cask nowsee
+brew tap sergio-prog/tap
+brew trust --cask sergio-prog/tap/nowsee
+brew install --cask --no-quarantine nowsee
 ```
+
+The trust command approves only the Nowsee cask. To trust every current and future package in the
+tap instead, use `brew trust sergio-prog/tap`.
 
 ### Download
 
