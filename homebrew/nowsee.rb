@@ -25,12 +25,8 @@ cask "nowsee" do
   ]
 
   caveats <<~EOS
-    Nowsee is signed but not notarized, so Gatekeeper will refuse the first launch.
-    Either install with --no-quarantine:
-
-      brew install --cask --no-quarantine nowsee
-
-    or open it once from Finder with right-click -> Open.
+    Nowsee is signed but not notarized. If macOS blocks the first launch, open
+    /Applications in Finder, Control-click Nowsee, choose Open, then confirm Open.
 
     On first launch macOS asks for permission to record system audio. Nowsee cannot
     draw anything without it. Nothing is recorded to disk and nothing leaves the Mac.

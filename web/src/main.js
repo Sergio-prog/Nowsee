@@ -10,7 +10,7 @@ const FPS = 30;
 const BREW = [
   "brew tap sergio-prog/tap",
   "brew trust --cask sergio-prog/tap/nowsee",
-  "brew install --cask --no-quarantine nowsee",
+  "brew install --cask nowsee",
 ].join("\n");
 
 const signal = createSignal();

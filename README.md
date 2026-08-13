@@ -33,11 +33,18 @@ Nowsee does it continuously, from whatever is playing right now.
 ```sh
 brew tap sergio-prog/tap
 brew trust --cask sergio-prog/tap/nowsee
-brew install --cask --no-quarantine nowsee
+brew install --cask nowsee
 ```
 
 The trust command approves only the Nowsee cask. To trust every current and future package in the
 tap instead, use `brew trust sergio-prog/tap`.
+
+If you previously installed a source build with `make install`, quit Nowsee and let Homebrew replace
+that unmanaged app once:
+
+```sh
+brew install --cask --force nowsee
+```
 
 ### Download
 
@@ -58,9 +65,9 @@ make install   # build, install to /Applications, launch
 
 ### First launch
 
-Nowsee is signed but **not notarized** — that needs a paid Apple Developer account. macOS will say
-it cannot verify the developer. Right-click the app → **Open** → **Open**, once. After that it
-launches normally.
+Nowsee is signed but **not notarized** — that needs a paid Apple Developer account. If macOS says
+it cannot verify the developer, open `/Applications` in Finder, Control-click Nowsee, then choose
+**Open** → **Open**, once. After that it launches normally.
 
 Then macOS asks for permission to record system audio. Nowsee cannot draw anything without it.
 Nothing is recorded to disk, nothing leaves the machine, and the microphone is never touched — the

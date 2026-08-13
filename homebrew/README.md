@@ -33,24 +33,24 @@ brew untap Sergio-prog/tap 2>/dev/null
 brew tap Sergio-prog/tap
 brew trust --cask Sergio-prog/tap/nowsee
 brew audit --cask --online Sergio-prog/tap/nowsee
-brew install --cask --no-quarantine nowsee
+brew install --cask nowsee
 ```
 
 Bumping a version means editing `CFBundleShortVersionString` in `Sources/Nowsee/Info.plist` — the
 Makefile reads it from there, so it is the single source of truth.
 
-## Why `--no-quarantine`
+## First launch and Gatekeeper
 
-The app is signed with a self-signed certificate, not notarized. Homebrew quarantines downloaded
-casks, and Gatekeeper then refuses to launch an app it cannot verify. `--no-quarantine` skips that
-attribute; opening the app once from Finder with right-click → Open is the equivalent manual step.
+The app is signed with a self-signed certificate, not notarized. If Gatekeeper blocks it, open
+`/Applications` in Finder, Control-click Nowsee, choose **Open**, then confirm **Open**. Current
+Homebrew versions no longer support the old `--no-quarantine` installation option.
 
-Notarizing removes the need for either, and needs a paid Apple Developer account. It is on the
-[roadmap](../ROADMAP.md).
+Notarizing removes this extra first-launch step and needs a paid Apple Developer account. It is on
+the [roadmap](../ROADMAP.md).
 
 ## The official homebrew-cask repository
 
 Third-party taps cannot mark themselves as globally trusted. To remove the per-user trust step,
 Nowsee must be accepted into `Homebrew/homebrew-cask`. Before submitting it, sign the app with an
-Apple Developer ID and notarize it so installation no longer needs `--no-quarantine`; official
-casks cannot require users to bypass Gatekeeper.
+Apple Developer ID and notarize it so installation no longer needs a manual Gatekeeper override;
+official casks cannot require users to bypass Gatekeeper.
