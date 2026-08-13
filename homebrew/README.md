@@ -42,8 +42,10 @@ Makefile reads it from there, so it is the single source of truth.
 ## First launch and Gatekeeper
 
 The app is signed with a self-signed certificate, not notarized. If Gatekeeper blocks it, open
-`/Applications` in Finder, Control-click Nowsee, choose **Open**, then confirm **Open**. Current
-Homebrew versions no longer support the old `--no-quarantine` installation option.
+**System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to
+Nowsee, authenticate, then confirm **Open**. Current Homebrew versions no longer support the old
+`--no-quarantine` installation option. A user who trusts the tap can instead remove quarantine from
+this app only with `xattr -dr com.apple.quarantine /Applications/Nowsee.app`.
 
 Notarizing removes this extra first-launch step and needs a paid Apple Developer account. It is on
 the [roadmap](../ROADMAP.md).

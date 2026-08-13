@@ -65,9 +65,30 @@ make install   # build, install to /Applications, launch
 
 ### First launch
 
-Nowsee is signed but **not notarized** — that needs a paid Apple Developer account. If macOS says
-it cannot verify the developer, open `/Applications` in Finder, Control-click Nowsee, then choose
-**Open** → **Open**, once. After that it launches normally.
+The current release is signed with the project's self-signed certificate, but it is **not yet
+notarized by Apple**. Until the project has an Apple Developer Program membership, macOS cannot
+identify the developer or ask Apple's notarization service to verify the build.
+
+After trying to open Nowsee once:
+
+1. Open **System Settings → Privacy & Security**.
+2. Scroll down to **Security** and click **Open Anyway** next to Nowsee.
+3. Authenticate, then confirm **Open**.
+
+macOS saves that choice for this app. Apple's [current instructions](https://support.apple.com/102445)
+note that **Open Anyway** is available for about an hour after the blocked launch.
+
+If you installed Nowsee from this repository's release or Homebrew tap and prefer the terminal,
+remove quarantine from this app only and launch it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Nowsee.app
+open -a Nowsee
+```
+
+This is a scoped Gatekeeper override; it does not disable macOS security globally. Do not run it on
+a copy downloaded from an unofficial source. The permanent fix is Developer ID signing and Apple
+notarization, which is planned for a future release.
 
 Then macOS asks for permission to record system audio. Nowsee cannot draw anything without it.
 Nothing is recorded to disk, nothing leaves the machine, and the microphone is never touched — the

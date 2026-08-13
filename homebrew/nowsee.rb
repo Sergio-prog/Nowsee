@@ -25,8 +25,14 @@ cask "nowsee" do
   ]
 
   caveats <<~EOS
-    Nowsee is signed but not notarized. If macOS blocks the first launch, open
-    /Applications in Finder, Control-click Nowsee, choose Open, then confirm Open.
+    Nowsee is self-signed and not yet notarized by Apple. After macOS blocks the
+    first launch, open System Settings > Privacy & Security, scroll to Security,
+    click Open Anyway next to Nowsee, authenticate, then confirm Open.
+
+    If you trust this tap and prefer the terminal:
+
+      xattr -dr com.apple.quarantine /Applications/Nowsee.app
+      open -a Nowsee
 
     On first launch macOS asks for permission to record system audio. Nowsee cannot
     draw anything without it. Nothing is recorded to disk and nothing leaves the Mac.

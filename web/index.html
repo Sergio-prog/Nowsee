@@ -114,10 +114,29 @@
         </div>
       </section>
 
-      <p class="font-mono text-[11px] leading-relaxed text-dimmer">
-        Nowsee asks to record system audio. Nothing is written to disk, nothing leaves your Mac,
-        and the microphone is never touched.
-      </p>
+      <section class="max-w-[76ch] text-[12px] leading-relaxed text-dim" aria-labelledby="first-launch-title">
+        <p>
+          <strong id="first-launch-title" class="font-medium text-ink">First launch requires one approval.</strong>
+          The current release is self-signed and not yet notarized by Apple. After macOS blocks it,
+          open <span class="text-ink">System Settings → Privacy &amp; Security</span>, scroll to Security,
+          then choose <span class="text-ink">Open Anyway</span>.
+          <a
+            href="https://support.apple.com/102445"
+            class="whitespace-nowrap text-magma-4 transition-colors hover:text-magma-5"
+            >Apple’s instructions ↗</a
+          >
+        </p>
+        <details class="mt-1 text-dimmer">
+          <summary class="w-fit cursor-pointer transition-colors hover:text-ink">Terminal alternative</summary>
+          <code class="mt-1 block max-w-full overflow-x-auto font-mono text-[11px] whitespace-nowrap text-dim"
+            >xattr -dr com.apple.quarantine /Applications/Nowsee.app &amp;&amp; open -a Nowsee</code
+          >
+        </details>
+        <p class="mt-2 font-mono text-[11px] text-dimmer">
+          Nowsee asks to record system audio. Nothing is written to disk, nothing leaves your Mac,
+          and the microphone is never touched.
+        </p>
+      </section>
     </main>
 
     <footer
