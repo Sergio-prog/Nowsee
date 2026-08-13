@@ -37,8 +37,8 @@ brew install --cask nowsee
 
 ### Download
 
-Grab the latest `Nowsee.zip` from [Releases](https://github.com/Sergio-prog/Nowsee/releases),
-unzip it, and drag `Nowsee.app` to `/Applications`.
+Grab the latest `Nowsee.dmg` from [Releases](https://github.com/Sergio-prog/Nowsee/releases),
+open it, and drag `Nowsee.app` onto the Applications shortcut. A ZIP is also provided.
 
 ### Build from source
 
@@ -182,7 +182,8 @@ make app             # build + sign dist/Nowsee.app
 make run-app         # restart the dist/ build
 make install         # install to /Applications and launch
 make icon            # regenerate the icon from scripts/make-icon.swift
-make release         # zip the app and print the Homebrew cask sha256
+make dmg             # build a drag-to-Applications disk image
+make release         # build ZIP + DMG and print their sha256 checksums
 make probe-app       # the P0 capture-verification app
 make run-probe-app   # run it for 15s -> ~/Library/Logs/nowsee-probe.log
 make reset-tcc       # revoke the audio permission to re-test the prompt

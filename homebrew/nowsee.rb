@@ -1,6 +1,6 @@
 cask "nowsee" do
-  version "0.1.0"
-  sha256 "aacc2d5639f61c1131c0955710f0cd6a33d786fbf5257283be5505e61069283f"
+  version "0.2.0"
+  sha256 "5318ed2276945da6679ee53ff9a45bfca2d6397ce463ba471ac4e89c64ed5342"
 
   url "https://github.com/Sergio-prog/Nowsee/releases/download/v#{version}/Nowsee-#{version}.zip",
       verified: "github.com/Sergio-prog/Nowsee/"

@@ -12,11 +12,13 @@ ICNS := dist/Nowsee.icns
 
 VERSION = $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Sources/Nowsee/Info.plist)
 ZIP = dist/Nowsee-$(VERSION).zip
+DMG = dist/Nowsee-$(VERSION).dmg
+DMG_STAGE := dist/Nowsee-dmg
 CASK := homebrew/nowsee.rb
 
 INSTALL_DIR ?= /Applications
 
-.PHONY: cert app check icon og run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version verify-sources
+.PHONY: cert app check dmg icon og run-app install uninstall probe run-probe probe-app run-probe-app reset-tcc clean release version verify-sources
 
 verify-sources:
 	@test -f Sources/Nowsee/Info.plist || { echo "error: tracked Sources/Nowsee/Info.plist is missing; restore it with: git restore Sources/Nowsee/Info.plist"; exit 1; }
@@ -62,6 +64,15 @@ run-app: app
 	@pkill -INT -f "Nowsee.app/Contents/MacOS/Nowsee" 2>/dev/null || true
 	open "$(APP)"
 
+dmg: app
+	rm -rf "$(DMG_STAGE)" "$(DMG)"
+	mkdir -p "$(DMG_STAGE)"
+	ditto "$(APP)" "$(DMG_STAGE)/Nowsee.app"
+	ln -s /Applications "$(DMG_STAGE)/Applications"
+	hdiutil create -volname "Nowsee $(VERSION)" -srcfolder "$(DMG_STAGE)" -ov -format UDZO "$(DMG)"
+	hdiutil verify "$(DMG)"
+	rm -rf "$(DMG_STAGE)"
+
 probe:
 	$(SWIFT) build -c $(CONFIG) --product nowsee-probe
 	codesign --force --sign "$(SIGN_IDENTITY)" --identifier sh.nowsee.probe $(PROBE)
@@ -86,18 +97,21 @@ run-probe-app: probe-app
 version:
 	@echo $(VERSION)
 
-release: check app
+release: check dmg
 	rm -f "$(ZIP)"
 	ditto -c -k --sequesterRsrc --keepParent "$(APP)" "$(ZIP)"
 	@sha=$$(shasum -a 256 "$(ZIP)" | awk '{print $$1}'); \
+	dmg_sha=$$(shasum -a 256 "$(DMG)" | awk '{print $$1}'); \
 	sed -i '' -e 's|^  version ".*"|  version "$(VERSION)"|' -e "s|^  sha256 \".*\"|  sha256 \"$$sha\"|" "$(CASK)"; \
 	echo; \
 	echo "$(ZIP)  ($$(du -h "$(ZIP)" | cut -f1))"; \
 	echo "sha256  $$sha"; \
+	echo "$(DMG)  ($$(du -h "$(DMG)" | cut -f1))"; \
+	echo "sha256  $$dmg_sha"; \
 	echo "$(CASK) updated to $(VERSION)"; \
 	echo; \
 	echo "next:"; \
-	echo "  gh release create v$(VERSION) \"$(ZIP)\" --title v$(VERSION) --generate-notes"; \
+	echo "  gh release create v$(VERSION) \"$(ZIP)\" \"$(DMG)\" --title v$(VERSION) --generate-notes"; \
 	echo "  cp $(CASK) ../homebrew-tap/Casks/nowsee.rb && commit it"
 
 reset-tcc:
